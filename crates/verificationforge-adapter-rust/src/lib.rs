@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use verificationforge_core::{
     CheckKind, CheckResult, CheckStatus, ExecutionAdapter, Finding, LanguageAdapter,
-    LanguageDetection,
+    LanguageDetection, run_repository_harness,
 };
 
 pub struct RustAdapter;
@@ -62,7 +62,9 @@ impl LanguageAdapter for RustAdapter {
                 run_cargo(execution, repo, check, &["tree", "--workspace", "--locked"])
             }
             CheckKind::Placeholders => scan_placeholders(repo),
-            CheckKind::Security => optional_cargo_tool(execution, repo, check, "audit", &["audit"]),
+            CheckKind::Security => {
+                optional_cargo_tool(execution, repo, check, "audit", &["audit"])
+            }
             CheckKind::Coverage => optional_cargo_tool(
                 execution,
                 repo,
@@ -84,14 +86,12 @@ impl LanguageAdapter for RustAdapter {
             ),
             CheckKind::Fuzz => run_fuzz(execution, repo),
             CheckKind::Concurrency => run_concurrency(execution, repo),
-            CheckKind::Contracts => run_named_harness(execution, repo, check, "vf_contracts"),
-            CheckKind::Stress => run_named_harness(execution, repo, check, "vf_stress"),
-            CheckKind::FaultInjection => {
-                run_named_harness(execution, repo, check, "vf_fault_injection")
-            }
+            CheckKind::Contracts => required_repository_harness(execution, repo, check),
+            CheckKind::Stress => required_repository_harness(execution, repo, check),
+            CheckKind::FaultInjection => required_repository_harness(execution, repo, check),
             CheckKind::Ui => {
                 if has_ui_assets(repo) {
-                    run_named_harness(execution, repo, check, "vf_ui")
+                    required_repository_harness(execution, repo, check)
                 } else {
                     CheckResult::skipped(
                         name(check),
@@ -99,13 +99,37 @@ impl LanguageAdapter for RustAdapter {
                     )
                 }
             }
-            CheckKind::FormalProof => run_named_harness(execution, repo, check, "vf_formal"),
+            CheckKind::FormalProof => required_repository_harness(execution, repo, check),
         }
     }
 }
 
 fn name(check: CheckKind) -> String {
     format!("rust:{}", check.as_str())
+}
+
+fn repository_harness(
+    execution: &dyn ExecutionAdapter,
+    repo: &Path,
+    check: CheckKind,
+) -> Option<CheckResult> {
+    run_repository_harness(repo, execution, name(check), check.as_str())
+}
+
+fn required_repository_harness(
+    execution: &dyn ExecutionAdapter,
+    repo: &Path,
+    check: CheckKind,
+) -> CheckResult {
+    repository_harness(execution, repo, check).unwrap_or_else(|| {
+        CheckResult::unsupported(
+            name(check),
+            format!(
+                "required repository harness is missing: .verificationforge/{}.argv",
+                check.as_str()
+            ),
+        )
+    })
 }
 
 fn run_cargo(
@@ -160,38 +184,18 @@ fn optional_cargo_tool(
         .execute("cargo", &version_args, repo)
         .map(|output| output.success())
         .unwrap_or(false);
-    if !available {
-        return CheckResult::unsupported(
-            name(check),
-            format!("cargo {subcommand} is not installed or not available"),
-        );
+    if available {
+        return run_cargo(execution, repo, check, run_args);
     }
-    run_cargo(execution, repo, check, run_args)
-}
-
-fn run_named_harness(
-    execution: &dyn ExecutionAdapter,
-    repo: &Path,
-    check: CheckKind,
-    harness: &str,
-) -> CheckResult {
-    let path = repo.join("tests").join(format!("{harness}.rs"));
-    if !path.is_file() {
-        return CheckResult::unsupported(
+    repository_harness(execution, repo, check).unwrap_or_else(|| {
+        CheckResult::unsupported(
             name(check),
             format!(
-                "required Rust harness {} is missing; add tests/{}.rs",
-                check.as_str(),
-                harness
+                "cargo {subcommand} is unavailable and .verificationforge/{}.argv is missing",
+                check.as_str()
             ),
-        );
-    }
-    run_cargo(
-        execution,
-        repo,
-        check,
-        &["test", "--test", harness, "--locked"],
-    )
+        )
+    })
 }
 
 fn run_fuzz(execution: &dyn ExecutionAdapter, repo: &Path) -> CheckResult {
@@ -250,15 +254,12 @@ fn run_fuzz(execution: &dyn ExecutionAdapter, repo: &Path) -> CheckResult {
 }
 
 fn fallback_fuzz_harness(execution: &dyn ExecutionAdapter, repo: &Path) -> CheckResult {
-    let path = repo.join("tests").join("vf_fuzz.rs");
-    if path.is_file() {
-        run_named_harness(execution, repo, CheckKind::Fuzz, "vf_fuzz")
-    } else {
+    repository_harness(execution, repo, CheckKind::Fuzz).unwrap_or_else(|| {
         CheckResult::unsupported(
             name(CheckKind::Fuzz),
-            "cargo-fuzz is unavailable or has no targets and tests/vf_fuzz.rs is missing",
+            "cargo-fuzz is unavailable or has no targets and .verificationforge/fuzz.argv is missing",
         )
-    }
+    })
 }
 
 fn run_concurrency(execution: &dyn ExecutionAdapter, repo: &Path) -> CheckResult {
@@ -269,26 +270,26 @@ fn run_concurrency(execution: &dyn ExecutionAdapter, repo: &Path) -> CheckResult
         );
     }
 
-    let miri = optional_cargo_tool(
-        execution,
-        repo,
-        CheckKind::Concurrency,
-        "miri",
-        &["miri", "test", "--workspace"],
-    );
-    if miri.status != CheckStatus::Unsupported {
-        return miri;
+    let version_args = vec!["miri".to_owned(), "--version".to_owned()];
+    let miri_available = execution
+        .execute("cargo", &version_args, repo)
+        .map(|output| output.success())
+        .unwrap_or(false);
+    if miri_available {
+        return run_cargo(
+            execution,
+            repo,
+            CheckKind::Concurrency,
+            &["miri", "test", "--workspace"],
+        );
     }
 
-    let path = repo.join("tests").join("vf_concurrency.rs");
-    if path.is_file() {
-        run_named_harness(execution, repo, CheckKind::Concurrency, "vf_concurrency")
-    } else {
+    repository_harness(execution, repo, CheckKind::Concurrency).unwrap_or_else(|| {
         CheckResult::unsupported(
             name(CheckKind::Concurrency),
-            "concurrency markers detected but neither cargo miri nor tests/vf_concurrency.rs is available",
+            "concurrency markers detected but neither cargo miri nor .verificationforge/concurrency.argv is available",
         )
-    }
+    })
 }
 
 fn scan_placeholders(repo: &Path) -> CheckResult {
@@ -328,7 +329,10 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
     if findings.is_empty() {
         CheckResult::pass_with_evidence(
             name(CheckKind::Placeholders),
-            format!("scanned {} Rust source files for placeholder markers", files.len()),
+            format!(
+                "scanned {} Rust source files for placeholder markers",
+                files.len()
+            ),
         )
     } else {
         CheckResult {
@@ -368,9 +372,11 @@ fn has_ui_assets(repo: &Path) -> bool {
             .any(|directory| repo.join(directory).is_dir())
         || source_files(repo, "rs").iter().any(|path| {
             fs::read_to_string(path).is_ok_and(|content| {
-                ["yew::", "leptos::", "dioxus::", "egui::", "iced::", "tauri::"]
-                    .iter()
-                    .any(|marker| content.contains(marker))
+                [
+                    "yew::", "leptos::", "dioxus::", "egui::", "iced::", "tauri::",
+                ]
+                .iter()
+                .any(|marker| content.contains(marker))
             })
         })
 }
