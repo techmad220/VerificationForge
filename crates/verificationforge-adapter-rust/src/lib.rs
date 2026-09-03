@@ -322,13 +322,14 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
                 });
             }
         }
+        findings.extend(scan_semantic_fakes(repo, path, &content));
     }
 
     if findings.is_empty() {
         CheckResult::pass_with_evidence(
             name(CheckKind::Placeholders),
             format!(
-                "scanned {} Rust source files for placeholder markers",
+                "scanned {} Rust source files for placeholder and fake-success patterns",
                 files.len()
             ),
         )
@@ -338,6 +339,137 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
             status: CheckStatus::Fail,
             findings,
         }
+    }
+}
+
+fn scan_semantic_fakes(repo: &Path, path: &Path, content: &str) -> Vec<Finding> {
+    let lines = content.lines().collect::<Vec<_>>();
+    let mut findings = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        let Some(function_name) = rust_function_name(trimmed) else {
+            continue;
+        };
+        let public = trimmed.starts_with("pub ") || trimmed.starts_with("pub(");
+        let sensitive = sensitive_gate_name(function_name);
+        if !(public || sensitive) {
+            continue;
+        }
+
+        if let Some(body) = inline_rust_body(trimmed) {
+            if body.is_empty() && public {
+                findings.push(fake_finding(
+                    repo,
+                    path,
+                    index,
+                    function_name,
+                    "public function has an empty implementation",
+                ));
+            } else if sensitive && constant_bool_body(body) {
+                findings.push(fake_finding(
+                    repo,
+                    path,
+                    index,
+                    function_name,
+                    "authorization/permission function returns a constant boolean",
+                ));
+            }
+            continue;
+        }
+
+        if trimmed.contains('{') {
+            let next = lines
+                .iter()
+                .enumerate()
+                .skip(index + 1)
+                .find(|(_, candidate)| {
+                    let candidate = candidate.trim();
+                    !candidate.is_empty() && !candidate.starts_with("//")
+                });
+            if let Some((body_index, body_line)) = next {
+                let body_line = body_line.trim();
+                if body_line == "}" && public {
+                    findings.push(fake_finding(
+                        repo,
+                        path,
+                        body_index,
+                        function_name,
+                        "public function has an empty implementation",
+                    ));
+                } else if sensitive && constant_bool_body(body_line) {
+                    findings.push(fake_finding(
+                        repo,
+                        path,
+                        body_index,
+                        function_name,
+                        "authorization/permission function returns a constant boolean",
+                    ));
+                }
+            }
+        }
+    }
+    findings
+}
+
+fn rust_function_name(line: &str) -> Option<&str> {
+    let marker = line.find("fn ")? + 3;
+    let rest = &line[marker..];
+    let end = rest
+        .find(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
+        .unwrap_or(rest.len());
+    (end > 0).then_some(&rest[..end])
+}
+
+fn inline_rust_body(line: &str) -> Option<&str> {
+    let open = line.find('{')?;
+    let close = line.rfind('}')?;
+    (close > open).then_some(line[open + 1..close].trim())
+}
+
+fn sensitive_gate_name(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    [
+        "authoriz",
+        "authenticate",
+        "permission",
+        "has_access",
+        "can_access",
+        "is_admin",
+        "allow_access",
+    ]
+    .iter()
+    .any(|marker| name.contains(marker))
+}
+
+fn constant_bool_body(body: &str) -> bool {
+    let normalized = body
+        .chars()
+        .filter(|character| !character.is_whitespace() && *character != ';')
+        .collect::<String>()
+        .to_ascii_lowercase();
+    matches!(
+        normalized.as_str(),
+        "true" | "false" | "returntrue" | "returnfalse"
+    )
+}
+
+fn fake_finding(
+    repo: &Path,
+    path: &Path,
+    index: usize,
+    function_name: &str,
+    reason: &str,
+) -> Finding {
+    Finding {
+        code: "VF_FAKE_IMPLEMENTATION".into(),
+        message: format!(
+            "{}:{} function {}: {}",
+            display_relative(repo, path),
+            index + 1,
+            function_name,
+            reason
+        ),
+        blocking: true,
     }
 }
 
@@ -485,6 +617,26 @@ mod tests {
         .expect("write source");
         let result = scan_placeholders(&root);
         assert_eq!(result.status, CheckStatus::Fail);
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn placeholder_scan_blocks_constant_authorization() {
+        let root = temp_dir();
+        fs::create_dir_all(root.join("src")).expect("create dirs");
+        fs::write(
+            root.join("src/lib.rs"),
+            "pub fn authorize_user() -> bool { true }\n",
+        )
+        .expect("write source");
+        let result = scan_placeholders(&root);
+        assert_eq!(result.status, CheckStatus::Fail);
+        assert!(
+            result
+                .findings
+                .iter()
+                .any(|finding| finding.code == "VF_FAKE_IMPLEMENTATION")
+        );
         fs::remove_dir_all(root).ok();
     }
 
