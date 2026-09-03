@@ -1,0 +1,55 @@
+name: Bootstrap script family
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    if: github.head_ref == 'agent/expand-script-family'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/expand-script-family
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Wire CLI, lock workspace, format, and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('apps/verificationforge-cli/src/main.rs')
+          text = path.read_text()
+          import_marker = 'use verificationforge_adapter_rust::RustAdapter;\n'
+          import_line = 'use verificationforge_adapter_script_family::{BashAdapter, PhpAdapter, PowerShellAdapter};\n'
+          if import_line not in text:
+              if import_marker not in text:
+                  raise SystemExit('CLI import marker missing')
+              text = text.replace(import_marker, import_marker + import_line, 1)
+          register_marker = '    registry.register(Arc::new(ScalaAdapter));\n'
+          register_lines = (
+              '    registry.register(Arc::new(BashAdapter));\n'
+              '    registry.register(Arc::new(PowerShellAdapter));\n'
+              '    registry.register(Arc::new(PhpAdapter));\n'
+          )
+          if register_lines not in text:
+              if register_marker not in text:
+                  raise SystemExit('CLI registration marker missing')
+              text = text.replace(register_marker, register_marker + register_lines, 1)
+          path.write_text(text)
+          PY
+          cargo generate-lockfile
+          cargo fmt --all
+          git rm .github/workflows/bootstrap-script-family.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/verificationforge-cli/src/main.rs Cargo.lock crates/verificationforge-adapter-script-family/src/lib.rs
+          git commit -m "Wire native script family adapters"
+          git push origin HEAD:agent/expand-script-family
