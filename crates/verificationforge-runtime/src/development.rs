@@ -33,7 +33,9 @@ impl ControlledDevelopmentSession {
         }
         let agent = agent.into();
         if agent.trim().is_empty() {
-            return Err("controlled development session requires a non-empty agent identity".into());
+            return Err(
+                "controlled development session requires a non-empty agent identity".into(),
+            );
         }
         Ok(Self {
             repo,
@@ -71,7 +73,13 @@ impl ControlledDevelopmentSession {
                 return Err(error);
             }
         };
-        let request = self.request(AgentOperationKind::Read, target.clone(), None, Vec::new(), None);
+        let request = self.request(
+            AgentOperationKind::Read,
+            target.clone(),
+            None,
+            Vec::new(),
+            None,
+        );
         if let Err(error) = self.authorize(&request) {
             self.record(AgentOperationKind::Read, None, target, false, Vec::new());
             return Err(error);
@@ -306,7 +314,9 @@ impl ControlledDevelopmentSession {
                 false,
                 Vec::new(),
             );
-            return Err(format!("controlled rename only accepts files: {source_target}"));
+            return Err(format!(
+                "controlled rename only accepts files: {source_target}"
+            ));
         }
         let destination = match self.resolve_for_write(to) {
             Ok(path) => path,
@@ -329,7 +339,9 @@ impl ControlledDevelopmentSession {
                 false,
                 Vec::new(),
             );
-            return Err(format!("rename destination already exists: {destination_target}"));
+            return Err(format!(
+                "rename destination already exists: {destination_target}"
+            ));
         }
         let request = self.request(
             AgentOperationKind::Rename,
@@ -661,7 +673,10 @@ impl ControlledDevelopmentSession {
             match component {
                 Component::Normal(value) => {
                     if value == ".git" {
-                        return Err("direct .git mutation is forbidden; use controlled VCS operations".into());
+                        return Err(
+                            "direct .git mutation is forbidden; use controlled VCS operations"
+                                .into(),
+                        );
                     }
                 }
                 Component::CurDir => {}
@@ -771,7 +786,10 @@ mod tests {
         RequirementId("REQ-1".into())
     }
 
-    fn session(root: &Path, execution: Arc<dyn ExecutionAdapter>) -> ControlledDevelopmentSession {
+    fn session(
+        root: &Path,
+        execution: Arc<dyn ExecutionAdapter>,
+    ) -> ControlledDevelopmentSession {
         ControlledDevelopmentSession::new(
             root,
             "agent-a",
@@ -812,7 +830,13 @@ mod tests {
 
         assert!(!root.join("src/renamed.txt").exists());
         assert_eq!(session.ledger().operations.len(), 5);
-        assert!(session.ledger().operations.iter().all(|operation| operation.accepted));
+        assert!(
+            session
+                .ledger()
+                .operations
+                .iter()
+                .all(|operation| operation.accepted)
+        );
         fs::remove_dir_all(root).ok();
     }
 
@@ -834,9 +858,21 @@ mod tests {
                 .write_file(Path::new(".git/config"), b"bad", requirement())
                 .is_err()
         );
-        assert!(!root.parent().expect("root parent").join("escape.txt").exists());
+        assert!(
+            !root
+                .parent()
+                .expect("root parent")
+                .join("escape.txt")
+                .exists()
+        );
         assert_eq!(session.ledger().operations.len(), 2);
-        assert!(session.ledger().operations.iter().all(|operation| !operation.accepted));
+        assert!(
+            session
+                .ledger()
+                .operations
+                .iter()
+                .all(|operation| !operation.accepted)
+        );
         fs::remove_dir_all(root).ok();
     }
 
@@ -872,7 +908,14 @@ mod tests {
             execution.calls.lock().expect("calls lock poisoned").as_slice(),
             &[("cargo".into(), args)]
         );
-        assert!(session.ledger().operations.last().expect("operation").accepted);
+        assert!(
+            session
+                .ledger()
+                .operations
+                .last()
+                .expect("operation")
+                .accepted
+        );
         fs::remove_dir_all(root).ok();
     }
 
@@ -886,7 +929,13 @@ mod tests {
             .commit("verified change", requirement(), Vec::new())
             .expect_err("commit without evidence must fail");
         assert!(error.contains("VF_FIREWALL_EVIDENCE_REQUIRED"));
-        assert!(execution.calls.lock().expect("calls lock poisoned").is_empty());
+        assert!(
+            execution
+                .calls
+                .lock()
+                .expect("calls lock poisoned")
+                .is_empty()
+        );
         fs::remove_dir_all(root).ok();
     }
 
@@ -916,7 +965,13 @@ mod tests {
                 )
                 .is_err()
         );
-        assert!(execution.calls.lock().expect("calls lock poisoned").is_empty());
+        assert!(
+            execution
+                .calls
+                .lock()
+                .expect("calls lock poisoned")
+                .is_empty()
+        );
         fs::remove_dir_all(root).ok();
     }
 
