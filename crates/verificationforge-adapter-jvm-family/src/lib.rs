@@ -1030,8 +1030,12 @@ fn execution_failure(language: JvmLanguage, check_name: &str, error: String) -> 
 }
 
 fn executable_available(execution: &dyn ExecutionAdapter, repo: &Path, program: &str) -> bool {
+    let args = match program {
+        "kotlinc" | "javac" | "java" => vec!["-version".into()],
+        _ => vec!["--version".into()],
+    };
     execution
-        .execute(program, &["--version".into()], repo)
+        .execute(program, &args, repo)
         .map(|result| result.success())
         .unwrap_or(false)
 }
