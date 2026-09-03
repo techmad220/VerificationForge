@@ -36,11 +36,7 @@ impl VerificationLevel {
             ]);
         }
         if self >= Self::Certification {
-            checks.extend([
-                CheckKind::Stress,
-                CheckKind::FaultInjection,
-                CheckKind::Ui,
-            ]);
+            checks.extend([CheckKind::Stress, CheckKind::FaultInjection, CheckKind::Ui]);
         }
         if self >= Self::Formal {
             checks.push(CheckKind::FormalProof);
@@ -246,7 +242,11 @@ pub trait LanguageAdapter: Send + Sync {
     ) -> CheckResult {
         CheckResult::unsupported(
             format!("{}:{}", self.id(), check.as_str()),
-            format!("{} adapter does not implement {}", self.id(), check.as_str()),
+            format!(
+                "{} adapter does not implement {}",
+                self.id(),
+                check.as_str()
+            ),
         )
     }
 }
