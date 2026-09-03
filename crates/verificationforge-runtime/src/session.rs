@@ -139,7 +139,10 @@ mod tests {
             _repo: &Path,
             _execution: &dyn ExecutionAdapter,
         ) -> CheckResult {
-            CheckResult::pass(format!("demo:{}", check.as_str()))
+            CheckResult::pass_with_evidence(
+                format!("demo:{}", check.as_str()),
+                format!("demo evidence for {}", check.as_str()),
+            )
         }
     }
 
