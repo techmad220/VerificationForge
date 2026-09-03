@@ -1,6 +1,12 @@
 use std::path::Path;
+use std::process::Command;
 use std::sync::Arc;
-use verificationforge_core::{LanguageAdapter, LanguageDetection};
+
+use verificationforge_core::LanguageAdapter;
+pub use verificationforge_core::{
+    CheckKind, CheckResult, CheckStatus, ExecutionAdapter, ExecutionResult, LanguageDetection,
+    VerificationLevel,
+};
 
 #[derive(Default)]
 pub struct AdapterRegistry {
@@ -35,34 +41,268 @@ impl AdapterRegistry {
     pub fn adapter_ids(&self) -> Vec<&'static str> {
         self.languages.iter().map(|adapter| adapter.id()).collect()
     }
+
+    fn adapter(&self, id: &str) -> Option<&Arc<dyn LanguageAdapter>> {
+        self.languages.iter().find(|adapter| adapter.id() == id)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AdapterCheckResult {
+    pub adapter_id: String,
+    pub language: String,
+    pub result: CheckResult,
+}
+
+#[derive(Debug, Clone)]
+pub struct VerificationReport {
+    pub level: VerificationLevel,
+    pub detections: Vec<LanguageDetection>,
+    pub checks: Vec<AdapterCheckResult>,
+    pub accepted: bool,
+}
+
+impl VerificationReport {
+    pub fn failed_checks(&self) -> usize {
+        self.checks
+            .iter()
+            .filter(|entry| entry.result.status == CheckStatus::Fail)
+            .count()
+    }
+
+    pub fn unsupported_checks(&self) -> usize {
+        self.checks
+            .iter()
+            .filter(|entry| entry.result.status == CheckStatus::Unsupported)
+            .count()
+    }
+}
+
+pub struct VerificationEngine {
+    registry: AdapterRegistry,
+    execution: Arc<dyn ExecutionAdapter>,
+}
+
+impl VerificationEngine {
+    pub fn new(registry: AdapterRegistry, execution: Arc<dyn ExecutionAdapter>) -> Self {
+        Self {
+            registry,
+            execution,
+        }
+    }
+
+    pub fn verify(&self, repo: &Path, level: VerificationLevel) -> VerificationReport {
+        let detections = self.registry.detect(repo);
+        if detections.is_empty() {
+            return VerificationReport {
+                level,
+                detections,
+                checks: vec![AdapterCheckResult {
+                    adapter_id: "runtime".into(),
+                    language: "unknown".into(),
+                    result: CheckResult::fail(
+                        "runtime:language-detection",
+                        "VF_NO_LANGUAGE",
+                        "no registered language adapter recognized this repository",
+                    ),
+                }],
+                accepted: false,
+            };
+        }
+
+        let mut checks = Vec::new();
+        for detection in &detections {
+            let Some(adapter) = self.registry.adapter(&detection.adapter_id) else {
+                checks.push(AdapterCheckResult {
+                    adapter_id: detection.adapter_id.clone(),
+                    language: detection.language.clone(),
+                    result: CheckResult::fail(
+                        "runtime:adapter-resolution",
+                        "VF_ADAPTER_MISSING",
+                        format!(
+                            "detected adapter {} is no longer registered",
+                            detection.adapter_id
+                        ),
+                    ),
+                });
+                continue;
+            };
+
+            for check in level.checks() {
+                checks.push(AdapterCheckResult {
+                    adapter_id: detection.adapter_id.clone(),
+                    language: detection.language.clone(),
+                    result: adapter.run_check(check, repo, self.execution.as_ref()),
+                });
+            }
+        }
+
+        let accepted = checks.iter().all(|entry| match entry.result.status {
+            CheckStatus::Fail => false,
+            CheckStatus::Unsupported => !level.unsupported_is_blocking(),
+            CheckStatus::Pass | CheckStatus::Skipped => !entry.result.has_blocking_finding(),
+        });
+
+        VerificationReport {
+            level,
+            detections,
+            checks,
+            accepted,
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct ProcessExecutionAdapter;
+
+impl ExecutionAdapter for ProcessExecutionAdapter {
+    fn id(&self) -> &'static str {
+        "local-process"
+    }
+
+    fn execute(
+        &self,
+        program: &str,
+        args: &[String],
+        cwd: &Path,
+    ) -> Result<ExecutionResult, String> {
+        let output = Command::new(program)
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .map_err(|error| format!("failed to execute {program}: {error}"))?;
+
+        Ok(ExecutionResult {
+            exit_code: output.status.code().unwrap_or(-1),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use verificationforge_core::{CheckResult, LanguageDetection};
+    use std::collections::BTreeMap;
+    use std::sync::Mutex;
+    use verificationforge_core::LanguageAdapter;
 
-    struct Demo;
-    impl LanguageAdapter for Demo {
+    struct DemoAdapter {
+        id: &'static str,
+        language: &'static str,
+        fail_test: bool,
+    }
+
+    impl LanguageAdapter for DemoAdapter {
         fn id(&self) -> &'static str {
-            "demo"
+            self.id
         }
+
         fn detect(&self, _repo: &Path) -> Option<LanguageDetection> {
             Some(LanguageDetection {
-                language: "Demo".into(),
+                adapter_id: self.id.into(),
+                language: self.language.into(),
                 confidence_percent: 100,
             })
         }
-        fn build(&self, _repo: &Path) -> CheckResult {
-            CheckResult::pass("demo:build")
+
+        fn run_check(
+            &self,
+            check: CheckKind,
+            _repo: &Path,
+            _execution: &dyn ExecutionAdapter,
+        ) -> CheckResult {
+            if self.fail_test && check == CheckKind::Test {
+                CheckResult::fail(
+                    format!("{}:test", self.id),
+                    "DEMO_TEST_FAILURE",
+                    "test failed",
+                )
+            } else if check == CheckKind::TypeCheck {
+                CheckResult::skipped(format!("{}:type-check", self.id), "covered by build")
+            } else {
+                CheckResult::pass(format!("{}:{}", self.id, check.as_str()))
+            }
+        }
+    }
+
+    #[derive(Default)]
+    struct FakeExecution {
+        calls: Mutex<BTreeMap<String, usize>>,
+    }
+
+    impl ExecutionAdapter for FakeExecution {
+        fn id(&self) -> &'static str {
+            "fake"
+        }
+
+        fn execute(
+            &self,
+            program: &str,
+            _args: &[String],
+            _cwd: &Path,
+        ) -> Result<ExecutionResult, String> {
+            *self
+                .calls
+                .lock()
+                .expect("lock poisoned")
+                .entry(program.into())
+                .or_default() += 1;
+            Ok(ExecutionResult {
+                exit_code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+            })
         }
     }
 
     #[test]
     fn duplicate_adapter_ids_are_not_registered_twice() {
         let mut registry = AdapterRegistry::default();
-        registry.register(Arc::new(Demo));
-        registry.register(Arc::new(Demo));
+        registry.register(Arc::new(DemoAdapter {
+            id: "demo",
+            language: "Demo",
+            fail_test: false,
+        }));
+        registry.register(Arc::new(DemoAdapter {
+            id: "demo",
+            language: "Demo",
+            fail_test: false,
+        }));
         assert_eq!(registry.adapter_ids(), vec!["demo"]);
+    }
+
+    #[test]
+    fn mixed_language_verification_runs_every_detected_adapter() {
+        let mut registry = AdapterRegistry::default();
+        registry.register(Arc::new(DemoAdapter {
+            id: "one",
+            language: "One",
+            fail_test: false,
+        }));
+        registry.register(Arc::new(DemoAdapter {
+            id: "two",
+            language: "Two",
+            fail_test: false,
+        }));
+        let engine = VerificationEngine::new(registry, Arc::new(FakeExecution::default()));
+        let report = engine.verify(Path::new("."), VerificationLevel::Patch);
+        assert_eq!(report.detections.len(), 2);
+        assert!(report.accepted);
+        assert_eq!(report.checks.len(), 10);
+    }
+
+    #[test]
+    fn a_failed_check_blocks_acceptance() {
+        let mut registry = AdapterRegistry::default();
+        registry.register(Arc::new(DemoAdapter {
+            id: "demo",
+            language: "Demo",
+            fail_test: true,
+        }));
+        let engine = VerificationEngine::new(registry, Arc::new(FakeExecution::default()));
+        let report = engine.verify(Path::new("."), VerificationLevel::Patch);
+        assert!(!report.accepted);
+        assert_eq!(report.failed_checks(), 1);
     }
 }
