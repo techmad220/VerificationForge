@@ -109,9 +109,7 @@ impl LanguageAdapter for FallbackLanguageAdapter {
 pub fn builtin_fallback_adapters() -> Vec<Arc<dyn LanguageAdapter>> {
     PROFILES
         .iter()
-        .map(|profile| {
-            Arc::new(FallbackLanguageAdapter::new(profile)) as Arc<dyn LanguageAdapter>
-        })
+        .map(|profile| Arc::new(FallbackLanguageAdapter::new(profile)) as Arc<dyn LanguageAdapter>)
         .collect()
 }
 
@@ -256,46 +254,57 @@ fn display_relative(repo: &Path, path: &Path) -> String {
         .replace('\\', "/")
 }
 
+macro_rules! profile {
+    ($id:literal, $language:literal, [$($extension:literal),* $(,)?], [$($manifest:literal),* $(,)?]) => {
+        LanguageProfile {
+            id: $id,
+            language: $language,
+            extensions: &[$($extension),*],
+            manifests: &[$($manifest),*],
+        }
+    };
+}
+
 pub static PROFILES: &[LanguageProfile] = &[
-    LanguageProfile { id: "c", language: "C", extensions: &["c", "h"], manifests: &["CMakeLists.txt", "Makefile", "meson.build"] },
-    LanguageProfile { id: "cpp", language: "C++", extensions: &["cc", "cpp", "cxx", "hh", "hpp", "hxx"], manifests: &["CMakeLists.txt", "Makefile", "meson.build"] },
-    LanguageProfile { id: "csharp", language: "C#", extensions: &["cs", "csx"], manifests: &["global.json", "Directory.Build.props"] },
-    LanguageProfile { id: "java", language: "Java", extensions: &["java"], manifests: &["pom.xml", "build.gradle", "build.gradle.kts", "gradlew"] },
-    LanguageProfile { id: "kotlin", language: "Kotlin", extensions: &["kt", "kts"], manifests: &["build.gradle.kts", "settings.gradle.kts", "gradlew"] },
-    LanguageProfile { id: "scala", language: "Scala", extensions: &["scala", "sc"], manifests: &["build.sbt"] },
-    LanguageProfile { id: "go", language: "Go", extensions: &["go"], manifests: &["go.mod", "go.work"] },
-    LanguageProfile { id: "javascript", language: "JavaScript", extensions: &["js", "jsx", "mjs", "cjs"], manifests: &["package.json"] },
-    LanguageProfile { id: "typescript", language: "TypeScript", extensions: &["ts", "tsx", "mts", "cts"], manifests: &["tsconfig.json"] },
-    LanguageProfile { id: "swift", language: "Swift", extensions: &["swift"], manifests: &["Package.swift"] },
-    LanguageProfile { id: "objective-c", language: "Objective-C", extensions: &["m", "mm"], manifests: &["Podfile"] },
-    LanguageProfile { id: "dart", language: "Dart", extensions: &["dart"], manifests: &["pubspec.yaml"] },
-    LanguageProfile { id: "php", language: "PHP", extensions: &["php", "phtml"], manifests: &["composer.json"] },
-    LanguageProfile { id: "ruby", language: "Ruby", extensions: &["rb", "rake"], manifests: &["Gemfile", "Rakefile"] },
-    LanguageProfile { id: "lua", language: "Lua", extensions: &["lua"], manifests: &["rockspec"] },
-    LanguageProfile { id: "perl", language: "Perl", extensions: &["pl", "pm", "t"], manifests: &["Makefile.PL", "Build.PL", "cpanfile"] },
-    LanguageProfile { id: "r", language: "R", extensions: &["r", "rmd"], manifests: &["DESCRIPTION", "renv.lock"] },
-    LanguageProfile { id: "julia", language: "Julia", extensions: &["jl"], manifests: &["Project.toml", "Manifest.toml"] },
-    LanguageProfile { id: "haskell", language: "Haskell", extensions: &["hs", "lhs"], manifests: &["stack.yaml", "cabal.project"] },
-    LanguageProfile { id: "ocaml", language: "OCaml", extensions: &["ml", "mli"], manifests: &["dune-project", "opam"] },
-    LanguageProfile { id: "fsharp", language: "F#", extensions: &["fs", "fsi", "fsx"], manifests: &["global.json"] },
-    LanguageProfile { id: "elixir", language: "Elixir", extensions: &["ex", "exs"], manifests: &["mix.exs"] },
-    LanguageProfile { id: "erlang", language: "Erlang", extensions: &["erl", "hrl"], manifests: &["rebar.config", "rebar.lock"] },
-    LanguageProfile { id: "zig", language: "Zig", extensions: &["zig"], manifests: &["build.zig", "build.zig.zon"] },
-    LanguageProfile { id: "nim", language: "Nim", extensions: &["nim", "nims"], manifests: &["nimble"] },
-    LanguageProfile { id: "d", language: "D", extensions: &["d", "di"], manifests: &["dub.json", "dub.sdl"] },
-    LanguageProfile { id: "fortran", language: "Fortran", extensions: &["f", "for", "f90", "f95", "f03", "f08"], manifests: &["fpm.toml"] },
-    LanguageProfile { id: "cobol", language: "COBOL", extensions: &["cob", "cbl", "cpy"], manifests: &[] },
-    LanguageProfile { id: "bash", language: "Bash", extensions: &["sh", "bash"], manifests: &[] },
-    LanguageProfile { id: "powershell", language: "PowerShell", extensions: &["ps1", "psm1", "psd1"], manifests: &[] },
-    LanguageProfile { id: "sql", language: "SQL", extensions: &["sql"], manifests: &[] },
-    LanguageProfile { id: "solidity", language: "Solidity", extensions: &["sol"], manifests: &["foundry.toml", "hardhat.config.js", "hardhat.config.ts"] },
-    LanguageProfile { id: "vyper", language: "Vyper", extensions: &["vy"], manifests: &["ape-config.yaml", "brownie-config.yaml"] },
-    LanguageProfile { id: "move", language: "Move", extensions: &["move"], manifests: &["Move.toml"] },
-    LanguageProfile { id: "cairo", language: "Cairo", extensions: &["cairo"], manifests: &["Scarb.toml"] },
-    LanguageProfile { id: "html-css", language: "HTML/CSS", extensions: &["html", "htm", "css", "scss", "sass", "less"], manifests: &[] },
-    LanguageProfile { id: "glsl", language: "GLSL", extensions: &["glsl", "vert", "frag", "geom", "comp", "tesc", "tese"], manifests: &[] },
-    LanguageProfile { id: "hlsl", language: "HLSL", extensions: &["hlsl", "fx", "fxh"], manifests: &[] },
-    LanguageProfile { id: "wgsl", language: "WGSL", extensions: &["wgsl"], manifests: &[] },
+    profile!("c", "C", ["c", "h"], ["CMakeLists.txt", "Makefile", "meson.build"]),
+    profile!("cpp", "C++", ["cc", "cpp", "cxx", "hh", "hpp", "hxx"], ["CMakeLists.txt", "Makefile", "meson.build"]),
+    profile!("csharp", "C#", ["cs", "csx"], ["global.json", "Directory.Build.props"]),
+    profile!("java", "Java", ["java"], ["pom.xml", "build.gradle", "build.gradle.kts", "gradlew"]),
+    profile!("kotlin", "Kotlin", ["kt", "kts"], ["build.gradle.kts", "settings.gradle.kts", "gradlew"]),
+    profile!("scala", "Scala", ["scala", "sc"], ["build.sbt"]),
+    profile!("go", "Go", ["go"], ["go.mod", "go.work"]),
+    profile!("javascript", "JavaScript", ["js", "jsx", "mjs", "cjs"], ["package.json"]),
+    profile!("typescript", "TypeScript", ["ts", "tsx", "mts", "cts"], ["tsconfig.json"]),
+    profile!("swift", "Swift", ["swift"], ["Package.swift"]),
+    profile!("objective-c", "Objective-C", ["m", "mm"], ["Podfile"]),
+    profile!("dart", "Dart", ["dart"], ["pubspec.yaml"]),
+    profile!("php", "PHP", ["php", "phtml"], ["composer.json"]),
+    profile!("ruby", "Ruby", ["rb", "rake"], ["Gemfile", "Rakefile"]),
+    profile!("lua", "Lua", ["lua"], ["rockspec"]),
+    profile!("perl", "Perl", ["pl", "pm", "t"], ["Makefile.PL", "Build.PL", "cpanfile"]),
+    profile!("r", "R", ["r", "rmd"], ["DESCRIPTION", "renv.lock"]),
+    profile!("julia", "Julia", ["jl"], ["Project.toml", "Manifest.toml"]),
+    profile!("haskell", "Haskell", ["hs", "lhs"], ["stack.yaml", "cabal.project"]),
+    profile!("ocaml", "OCaml", ["ml", "mli"], ["dune-project", "opam"]),
+    profile!("fsharp", "F#", ["fs", "fsi", "fsx"], ["global.json"]),
+    profile!("elixir", "Elixir", ["ex", "exs"], ["mix.exs"]),
+    profile!("erlang", "Erlang", ["erl", "hrl"], ["rebar.config", "rebar.lock"]),
+    profile!("zig", "Zig", ["zig"], ["build.zig", "build.zig.zon"]),
+    profile!("nim", "Nim", ["nim", "nims"], ["nimble"]),
+    profile!("d", "D", ["d", "di"], ["dub.json", "dub.sdl"]),
+    profile!("fortran", "Fortran", ["f", "for", "f90", "f95", "f03", "f08"], ["fpm.toml"]),
+    profile!("cobol", "COBOL", ["cob", "cbl", "cpy"], []),
+    profile!("bash", "Bash", ["sh", "bash"], []),
+    profile!("powershell", "PowerShell", ["ps1", "psm1", "psd1"], []),
+    profile!("sql", "SQL", ["sql"], []),
+    profile!("solidity", "Solidity", ["sol"], ["foundry.toml", "hardhat.config.js", "hardhat.config.ts"]),
+    profile!("vyper", "Vyper", ["vy"], ["ape-config.yaml", "brownie-config.yaml"]),
+    profile!("move", "Move", ["move"], ["Move.toml"]),
+    profile!("cairo", "Cairo", ["cairo"], ["Scarb.toml"]),
+    profile!("html-css", "HTML/CSS", ["html", "htm", "css", "scss", "sass", "less"], []),
+    profile!("glsl", "GLSL", ["glsl", "vert", "frag", "geom", "comp", "tesc", "tese"], []),
+    profile!("hlsl", "HLSL", ["hlsl", "fx", "fxh"], []),
+    profile!("wgsl", "WGSL", ["wgsl"], []),
 ];
 
 #[cfg(test)]
@@ -354,15 +363,17 @@ mod tests {
         fs::create_dir_all(root.join("web")).expect("create web");
         fs::write(root.join("go.mod"), "module example.test/demo\n").expect("write go.mod");
         fs::write(root.join("main.go"), "package main\nfunc main() {}\n").expect("write go");
-        fs::write(root.join("web/app.ts"), "export const value: number = 1;\n")
-            .expect("write ts");
+        fs::write(root.join("web/app.ts"), "export const value: number = 1;\n").expect("write ts");
         fs::write(root.join("web/tsconfig.json"), "{}\n").expect("write tsconfig");
 
         let go = FallbackLanguageAdapter::new(profile("go"));
         let typescript = FallbackLanguageAdapter::new(profile("typescript"));
         assert_eq!(go.detect(&root).expect("go detected").language, "Go");
         assert_eq!(
-            typescript.detect(&root).expect("typescript detected").language,
+            typescript
+                .detect(&root)
+                .expect("typescript detected")
+                .language,
             "TypeScript"
         );
         fs::remove_dir_all(root).ok();
@@ -430,8 +441,11 @@ mod tests {
     fn generic_placeholder_scan_blocks_explicit_stubs() {
         let root = temp_dir("placeholders");
         fs::create_dir_all(&root).expect("create root");
-        fs::write(root.join("main.go"), "package main\n// FIXME: implement auth\n")
-            .expect("write go");
+        fs::write(
+            root.join("main.go"),
+            "package main\n// FIXME: implement auth\n",
+        )
+        .expect("write go");
         let adapter = FallbackLanguageAdapter::new(profile("go"));
         let result = adapter.run_check(
             CheckKind::Placeholders,
