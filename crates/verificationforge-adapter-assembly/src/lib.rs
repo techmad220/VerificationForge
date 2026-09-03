@@ -82,7 +82,10 @@ impl LanguageAdapter for AssemblyAdapter {
         execution: &dyn ExecutionAdapter,
         scope: &ImpactScope,
     ) -> CheckResult {
-        let affected = scope.changed_paths.iter().any(|path| is_assembly_path(Path::new(path)));
+        let affected = scope
+            .changed_paths
+            .iter()
+            .any(|path| is_assembly_path(Path::new(path)));
         if !affected && !scope.requires_full_verification {
             return CheckResult::skipped(
                 "assembly:targeted-test",
@@ -99,7 +102,10 @@ impl LanguageAdapter for AssemblyAdapter {
         _scope: &ImpactScope,
     ) -> CheckResult {
         if has_named_test(repo, "integration") {
-            rename_check(run_tests(repo, execution), "assembly:checkpoint-integration")
+            rename_check(
+                run_tests(repo, execution),
+                "assembly:checkpoint-integration",
+            )
         } else {
             CheckResult::skipped(
                 "assembly:checkpoint-integration",
@@ -130,7 +136,10 @@ impl LanguageAdapter for AssemblyAdapter {
         _execution: &dyn ExecutionAdapter,
         _scope: &ImpactScope,
     ) -> CheckResult {
-        CheckResult::skipped("assembly:checkpoint-ui", "assembly source exposes no native UI surface")
+        CheckResult::skipped(
+            "assembly:checkpoint-ui",
+            "assembly source exposes no native UI surface",
+        )
     }
 
     fn run_api_verification(
@@ -162,11 +171,15 @@ impl LanguageAdapter for AssemblyAdapter {
             CheckKind::Lint => assemble_all(repo, execution, check.as_str(), true),
             CheckKind::Test => run_tests(repo, execution),
             CheckKind::Dependencies => dependency_inventory(repo),
-            CheckKind::Security | CheckKind::Placeholders => authenticity_scan(repo, check.as_str()),
+            CheckKind::Security | CheckKind::Placeholders => {
+                authenticity_scan(repo, check.as_str())
+            }
             CheckKind::Concurrency => {
                 if repository_contains(
                     repo,
-                    &["lock ", "lock\n", "xchg", "cmpxchg", "mfence", "lfence", "sfence"],
+                    &[
+                        "lock ", "lock\n", "xchg", "cmpxchg", "mfence", "lfence", "sfence",
+                    ],
                 ) {
                     required_harness(execution, repo, check.as_str())
                 } else {
@@ -221,7 +234,12 @@ fn assemble_all(
         let result = match dialect(path) {
             Dialect::Gnu => {
                 gnu += 1;
-                let mut args = vec!["-c".into(), relative.clone(), "-o".into(), object.display().to_string()];
+                let mut args = vec![
+                    "-c".into(),
+                    relative.clone(),
+                    "-o".into(),
+                    object.display().to_string(),
+                ];
                 if warnings_as_errors {
                     args.insert(0, "-Wa,--fatal-warnings".into());
                 }
@@ -273,7 +291,9 @@ fn assemble_all(
         format!("assembly:{check_name}"),
         format!(
             "native assembly completed files={} gnu={} nasm={} warnings_as_errors={warnings_as_errors}",
-            files.len(), gnu, nasm
+            files.len(),
+            gnu,
+            nasm
         ),
     )
 }
@@ -369,7 +389,10 @@ fn run_tests(repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResult {
     let _ = fs::remove_dir_all(&out_dir);
     CheckResult::pass_with_evidence(
         "assembly:test",
-        format!("assembled linked and executed assembly test programs={}", tests.len()),
+        format!(
+            "assembled linked and executed assembly test programs={}",
+            tests.len()
+        ),
     )
 }
 
@@ -385,14 +408,22 @@ fn deterministic_format_check(repo: &Path) -> CheckResult {
                 return CheckResult::fail(
                     "assembly:format",
                     "VF_ASM_FORMAT_TRAILING_WHITESPACE",
-                    format!("{}:{} has trailing whitespace", display_relative(repo, &path), index + 1),
+                    format!(
+                        "{}:{} has trailing whitespace",
+                        display_relative(repo, &path),
+                        index + 1
+                    ),
                 );
             }
             if line.contains('\r') {
                 return CheckResult::fail(
                     "assembly:format",
                     "VF_ASM_FORMAT_CRLF",
-                    format!("{}:{} contains carriage-return whitespace", display_relative(repo, &path), index + 1),
+                    format!(
+                        "{}:{} contains carriage-return whitespace",
+                        display_relative(repo, &path),
+                        index + 1
+                    ),
                 );
             }
         }
@@ -411,7 +442,10 @@ fn dependency_inventory(repo: &Path) -> CheckResult {
         };
         for raw in content.lines() {
             let line = strip_comment(raw).trim_start();
-            if line.starts_with(".include ") || line.starts_with("%include ") || line.starts_with("#include ") {
+            if line.starts_with(".include ")
+                || line.starts_with("%include ")
+                || line.starts_with("#include ")
+            {
                 includes += 1;
             }
         }
@@ -442,14 +476,24 @@ fn authenticity_scan(repo: &Path, check_name: &str) -> CheckResult {
             {
                 findings.push(Finding {
                     code: "VF_ASM_PLACEHOLDER".into(),
-                    message: format!("{}:{} contains unfinished implementation marker", display_relative(repo, &path), index + 1),
+                    message: format!(
+                        "{}:{} contains unfinished implementation marker",
+                        display_relative(repo, &path),
+                        index + 1
+                    ),
                     blocking: true,
                 });
             }
-            if lower.contains("password") && (lower.contains("db ") || lower.contains(".ascii") || lower.contains(".string")) {
+            if lower.contains("password")
+                && (lower.contains("db ") || lower.contains(".ascii") || lower.contains(".string"))
+            {
                 findings.push(Finding {
                     code: "VF_ASM_EMBEDDED_SECRET".into(),
-                    message: format!("{}:{} appears to embed credential-like data", display_relative(repo, &path), index + 1),
+                    message: format!(
+                        "{}:{} appears to embed credential-like data",
+                        display_relative(repo, &path),
+                        index + 1
+                    ),
                     blocking: true,
                 });
             }
@@ -504,8 +548,14 @@ fn collect_files(root: &Path, current: &Path, files: &mut Vec<PathBuf>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            let name = path.file_name().and_then(|value| value.to_str()).unwrap_or_default();
-            if matches!(name, ".git" | "target" | "node_modules" | "vendor" | ".venv" | "dist" | "build") {
+            let name = path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or_default();
+            if matches!(
+                name,
+                ".git" | "target" | "node_modules" | "vendor" | ".venv" | "dist" | "build"
+            ) {
                 continue;
             }
             collect_files(root, &path, files);
@@ -532,9 +582,11 @@ fn test_files(repo: &Path) -> Vec<PathBuf> {
 }
 
 fn has_named_test(repo: &Path, marker: &str) -> bool {
-    test_files(repo)
-        .iter()
-        .any(|path| display_relative(repo, path).to_ascii_lowercase().contains(marker))
+    test_files(repo).iter().any(|path| {
+        display_relative(repo, path)
+            .to_ascii_lowercase()
+            .contains(marker)
+    })
 }
 
 fn is_assembly_path(path: &Path) -> bool {
@@ -593,7 +645,10 @@ fn temp_output_dir(kind: &str) -> PathBuf {
     ))
 }
 
-fn execution_succeeded(result: Result<verificationforge_core::ExecutionResult, String>, _context: &str) -> bool {
+fn execution_succeeded(
+    result: Result<verificationforge_core::ExecutionResult, String>,
+    _context: &str,
+) -> bool {
     matches!(result, Ok(output) if output.success())
 }
 

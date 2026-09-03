@@ -3,6 +3,13 @@
 version = 4
 
 [[package]]
+name = "verificationforge-adapter-assembly"
+version = "0.1.0"
+dependencies = [
+ "verificationforge-core",
+]
+
+[[package]]
 name = "verificationforge-adapter-c-family"
 version = "0.1.0"
 dependencies = [
@@ -62,6 +69,7 @@ dependencies = [
 name = "verificationforge-cli"
 version = "0.1.0"
 dependencies = [
+ "verificationforge-adapter-assembly",
  "verificationforge-adapter-c-family",
  "verificationforge-adapter-fallback",
  "verificationforge-adapter-go",
