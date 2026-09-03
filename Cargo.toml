@@ -8,6 +8,7 @@ members = [
     "crates/verificationforge-adapter-js-family",
     "crates/verificationforge-adapter-c-family",
     "crates/verificationforge-adapter-jvm-family",
+    "crates/verificationforge-adapter-script-family",
     "crates/verificationforge-adapter-fallback",
     "apps/verificationforge-cli",
 ]
