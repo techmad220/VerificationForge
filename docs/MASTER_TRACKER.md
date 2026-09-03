@@ -10,7 +10,7 @@ This is the canonical capability roadmap. It intentionally describes required ca
 
 ## Before-code verification
 - [ ] Executable requirements, features, functions, interfaces, UI controls, inputs/outputs, preconditions, postconditions, invariants, error behavior, security/authorization rules, persistence, performance/resource limits, concurrency, state machines, compatibility, accessibility and reliability rules
-- [ ] Convert specifications into verification obligations before implementation exists
+- [x] Convert specifications into verification obligations before implementation exists
 - [ ] Design-level state exploration, reachability, invariant checking, distributed/concurrent modeling, architecture policy checks and threat modeling
 
 ## Graph model
@@ -138,9 +138,9 @@ This is the canonical capability roadmap. It intentionally describes required ca
 - [ ] Releases eventually require self-certification
 
 ## Production-capable definition
-- [ ] Multiple unrelated languages verify without core modification
+- [x] Multiple unrelated languages verify without core modification
 - [x] Mixed-language repositories verify correctly
-- [ ] Specifications create obligations before code
+- [x] Specifications create obligations before code
 - [ ] Agents build through controlled mutation interfaces
 - [ ] RequirementGraph, CodeGraph and EvidenceGraph operate together
 - [x] Change-impact analysis safely avoids unnecessary full-suite work
@@ -152,4 +152,4 @@ This is the canonical capability roadmap. It intentionally describes required ca
 
 ## Verified implementation notes
 
-The checked items above are backed by merged code and CI rather than roadmap intent alone. Rust/Python mixed-language verification, graph primitives and evidence-gap queries, content-addressed snapshot/impact planning, resource-aware scheduling, risk-tier policy, evidence-backed PASS semantics, and the controlled development firewall are implemented in the workspace. Items remain unchecked when only part of the compound requirement exists; for example, local caches and run journals exist, but shared/distributed cache backends and complete deadlock detection are not yet implemented.
+The checked items above are backed by merged code and CI rather than roadmap intent alone. Rust/Python mixed-language verification, specification-to-obligation generation, graph primitives and evidence-gap queries, content-addressed snapshot/impact planning, resource-aware scheduling, risk-tier policy, evidence-backed PASS semantics, and the controlled development firewall are implemented in the workspace. A real Go repository also verifies through the generic fallback adapter and per-language argv harness without core-engine modification, while missing harnesses fail closed. Items remain unchecked when only part of the compound requirement exists; for example, fallback profiles are not claimed as native first-class language adapters, local caches and run journals exist but shared/distributed cache backends and complete deadlock detection are not yet implemented.
