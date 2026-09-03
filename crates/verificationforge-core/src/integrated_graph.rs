@@ -92,7 +92,11 @@ impl VerificationGraphModel {
             return Err("evidence content address cannot be empty".into());
         }
         if self.evidence_results.contains_key(&link.id)
-            || self.ledger.links.iter().any(|existing| existing.id == link.id)
+            || self
+                .ledger
+                .links
+                .iter()
+                .any(|existing| existing.id == link.id)
         {
             return Err(format!("duplicate evidence id {}", link.id));
         }
@@ -101,10 +105,9 @@ impl VerificationGraphModel {
             .requirement
             .as_ref()
             .ok_or_else(|| "integrated evidence must reference a requirement".to_owned())?;
-        let symbol = link
-            .symbol
-            .as_ref()
-            .ok_or_else(|| "integrated evidence must reference an implementation symbol".to_owned())?;
+        let symbol = link.symbol.as_ref().ok_or_else(|| {
+            "integrated evidence must reference an implementation symbol".to_owned()
+        })?;
         self.ensure_requirement(requirement)?;
         self.ensure_symbol(symbol)?;
 
@@ -293,9 +296,7 @@ mod tests {
         graph.add_requirement(req.clone());
         graph.add_code_node(node(&first.0));
         graph.add_code_node(node(&second.0));
-        graph
-            .link_implementation(&req, &first)
-            .expect("link first");
+        graph.link_implementation(&req, &first).expect("link first");
         graph
             .link_implementation(&req, &second)
             .expect("link second");
@@ -395,7 +396,13 @@ mod tests {
         assert!(
             graph
                 .record_evidence(
-                    link("wrong-requirement", &other, &linked, "rust:test", "snapshot-a"),
+                    link(
+                        "wrong-requirement",
+                        &other,
+                        &linked,
+                        "rust:test",
+                        "snapshot-a",
+                    ),
                     CheckResult::pass_with_evidence("rust:test", "evidence"),
                 )
                 .is_err()
