@@ -1,0 +1,293 @@
+name: Popular Language Family CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-popular-language-family:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dart-lang/setup-dart@v1
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: '0.14.1'
+      - uses: hashicorp/setup-terraform@v3
+      - uses: cachix/install-nix-action@v31
+      - uses: gleam-lang/setup-gleam@v1
+      - name: Install native language toolchains
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang ruby-full lua5.4 perl r-base ghc ocaml-nox elixir erlang-base erlang-dev \
+            erlang-parsetools erlang-tools nim ldc gfortran gnucobol groovy clojure \
+            fp-compiler octave tcl sqlite3 gnat
+          python -m pip install --disable-pip-version-check 'sqlfluff==3.4.2'
+      - name: Verify native toolchains
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc --version
+          clang --version
+          dart --version
+          ruby --version
+          lua -v
+          luac -v
+          perl -v >/dev/null
+          Rscript --version
+          julia --version
+          ghc --version
+          ocamlc -version
+          dotnet --version
+          elixir --version
+          erl -version
+          zig version
+          nim --version
+          ldc2 --version
+          gfortran --version | head -1
+          cobc --version | head -1
+          sqlfluff --version
+          terraform version
+          groovy --version
+          clojure -e '(println "clojure-ok")'
+          fpc -iV
+          octave --version | head -1
+          tclsh <<< 'puts [info patchlevel]'
+          nix --version
+          gleam --version
+          gnatmake --version | head -1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Verify Rust workspace quality
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --workspace --all-targets --locked
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace --all-targets --locked
+      - name: Verify native language fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/vf-popular-fixtures"
+          rm -rf "$root"
+          mkdir -p "$root"
+
+          verify_fixture() {
+            local dir="$1"
+            local adapter="$2"
+            local out
+            out="$(cargo run -q -p verificationforge-cli -- "$dir" --level patch --no-journal)"
+            printf '%s\n' "$out"
+            test "$(grep -c "adapter=$adapter " <<<"$out")" -eq 1
+            grep -F 'VERIFICATIONFORGE_BARE_PASSES=0' <<<"$out"
+            grep -F 'VERIFICATIONFORGE_ACCEPTED=true' <<<"$out"
+          }
+
+          mkdir -p "$root/swift/src" "$root/swift/tests"
+          printf 'func add(_ a: Int, _ b: Int) -> Int { a + b }\n' > "$root/swift/src/Add.swift"
+          printf 'func add(_ a: Int, _ b: Int) -> Int { a + b }\nassert(add(2, 3) == 5)\n' > "$root/swift/tests/add_test.swift"
+          verify_fixture "$root/swift" swift
+
+          mkdir -p "$root/objective-c/src" "$root/objective-c/tests"
+          printf '#import <stdio.h>\nint add(int a, int b) { return a + b; }\n' > "$root/objective-c/src/add.m"
+          printf '#import <stdio.h>\nint main(void) { return (2 + 3 == 5) ? 0 : 1; }\n' > "$root/objective-c/tests/add_test.m"
+          verify_fixture "$root/objective-c" objective-c
+
+          mkdir -p "$root/dart/src" "$root/dart/tests"
+          printf 'int add(int a, int b) => a + b;\n' > "$root/dart/src/add.dart"
+          printf 'void main() { if (2 + 3 != 5) throw StateError("bad sum"); }\n' > "$root/dart/tests/add_test.dart"
+          verify_fixture "$root/dart" dart
+
+          mkdir -p "$root/ruby/src" "$root/ruby/tests"
+          printf 'def add(a, b) = a + b\n' > "$root/ruby/src/add.rb"
+          printf 'raise "bad sum" unless 2 + 3 == 5\n' > "$root/ruby/tests/add_test.rb"
+          verify_fixture "$root/ruby" ruby
+
+          mkdir -p "$root/lua/src" "$root/lua/tests"
+          printf 'function add(a, b) return a + b end\n' > "$root/lua/src/add.lua"
+          printf 'assert(2 + 3 == 5)\n' > "$root/lua/tests/add_test.lua"
+          verify_fixture "$root/lua" lua
+
+          mkdir -p "$root/perl/src" "$root/perl/tests"
+          printf 'use strict; use warnings; sub add { return $_[0] + $_[1]; }\n' > "$root/perl/src/add.pl"
+          printf 'use strict; use warnings; die "bad sum" unless 2 + 3 == 5;\n' > "$root/perl/tests/add_test.pl"
+          verify_fixture "$root/perl" perl
+
+          mkdir -p "$root/r/src" "$root/r/tests"
+          printf 'add <- function(a, b) a + b\n' > "$root/r/src/add.r"
+          printf 'stopifnot(2 + 3 == 5)\n' > "$root/r/tests/add_test.r"
+          verify_fixture "$root/r" r
+
+          mkdir -p "$root/julia/src" "$root/julia/tests"
+          printf 'add(a, b) = a + b\n' > "$root/julia/src/add.jl"
+          printf '@assert 2 + 3 == 5\n' > "$root/julia/tests/add_test.jl"
+          verify_fixture "$root/julia" julia
+
+          mkdir -p "$root/haskell/src" "$root/haskell/tests"
+          printf 'module Add where\nadd :: Int -> Int -> Int\nadd a b = a + b\n' > "$root/haskell/src/Add.hs"
+          printf 'main :: IO ()\nmain = if (2 + 3 :: Int) == 5 then pure () else fail "bad sum"\n' > "$root/haskell/tests/Add_test.hs"
+          verify_fixture "$root/haskell" haskell
+
+          mkdir -p "$root/ocaml/src" "$root/ocaml/tests"
+          printf 'let add a b = a + b\n' > "$root/ocaml/src/add.ml"
+          printf 'let () = assert (2 + 3 = 5)\n' > "$root/ocaml/tests/add_test.ml"
+          verify_fixture "$root/ocaml" ocaml
+
+          mkdir -p "$root/fsharp/src" "$root/fsharp/tests"
+          printf 'let add a b = a + b\n' > "$root/fsharp/src/add.fsx"
+          printf 'if 2 + 3 <> 5 then failwith "bad sum"\n' > "$root/fsharp/tests/add_test.fsx"
+          verify_fixture "$root/fsharp" fsharp
+
+          mkdir -p "$root/elixir/src" "$root/elixir/tests"
+          printf 'defmodule Add do\n  def add(a, b), do: a + b\nend\n' > "$root/elixir/src/add.ex"
+          printf 'if 2 + 3 != 5, do: raise("bad sum")\n' > "$root/elixir/tests/add_test.exs"
+          verify_fixture "$root/elixir" elixir
+
+          mkdir -p "$root/erlang/src" "$root/erlang/tests"
+          printf -- '-module(add).\n-export([add/2]).\nadd(A, B) -> A + B.\n' > "$root/erlang/src/add.erl"
+          printf '#!/usr/bin/env escript\nmain(_) -> case 2 + 3 of 5 -> ok; _ -> erlang:error(bad_sum) end.\n' > "$root/erlang/tests/add_test.escript"
+          chmod +x "$root/erlang/tests/add_test.escript"
+          verify_fixture "$root/erlang" erlang
+
+          mkdir -p "$root/zig/src" "$root/zig/tests"
+          printf 'pub fn add(a: i32, b: i32) i32 { return a + b; }\n' > "$root/zig/src/add.zig"
+          printf 'const std = @import("std");\ntest "sum" { try std.testing.expect(2 + 3 == 5); }\n' > "$root/zig/tests/add_test.zig"
+          verify_fixture "$root/zig" zig
+
+          mkdir -p "$root/nim/src" "$root/nim/tests"
+          printf 'proc add*(a, b: int): int = a + b\n' > "$root/nim/src/add.nim"
+          printf 'doAssert 2 + 3 == 5\n' > "$root/nim/tests/add_test.nim"
+          verify_fixture "$root/nim" nim
+
+          mkdir -p "$root/d/src" "$root/d/tests"
+          printf 'int add(int a, int b) { return a + b; }\n' > "$root/d/src/add.d"
+          printf 'void main() { assert(2 + 3 == 5); }\n' > "$root/d/tests/add_test.d"
+          verify_fixture "$root/d" d
+
+          mkdir -p "$root/fortran/src" "$root/fortran/tests"
+          printf 'function add(a,b) result(c)\ninteger :: a,b,c\nc=a+b\nend function add\n' > "$root/fortran/src/add.f90"
+          printf 'program test_add\nif (2 + 3 /= 5) error stop 1\nend program test_add\n' > "$root/fortran/tests/add_test.f90"
+          verify_fixture "$root/fortran" fortran
+
+          mkdir -p "$root/cobol/src" "$root/cobol/tests"
+          cat > "$root/cobol/src/add.cob" <<'EOF'
+          IDENTIFICATION DIVISION.
+          PROGRAM-ID. ADDDEMO.
+          PROCEDURE DIVISION.
+              STOP RUN.
+          EOF
+          cat > "$root/cobol/tests/add_test.cob" <<'EOF'
+          IDENTIFICATION DIVISION.
+          PROGRAM-ID. ADDTEST.
+          PROCEDURE DIVISION.
+              IF 2 + 3 NOT = 5 STOP RUN RETURNING 1 END-IF
+              STOP RUN.
+          EOF
+          verify_fixture "$root/cobol" cobol
+
+          mkdir -p "$root/sql/src" "$root/sql/tests"
+          printf 'CREATE TABLE demo (id INTEGER PRIMARY KEY, value TEXT);\n' > "$root/sql/src/schema.sql"
+          printf 'CREATE TABLE demo (id INTEGER PRIMARY KEY);\nINSERT INTO demo VALUES (1);\nSELECT * FROM demo;\n' > "$root/sql/tests/schema_test.sql"
+          verify_fixture "$root/sql" sql
+
+          mkdir -p "$root/hcl"
+          printf 'terraform { required_version = ">= 1.0" }\nvariable "x" { type = number default = 5 }\noutput "x" { value = var.x }\n' > "$root/hcl/main.tf"
+          verify_fixture "$root/hcl" hcl
+
+          mkdir -p "$root/groovy/src" "$root/groovy/tests"
+          printf 'def add(a, b) { a + b }\n' > "$root/groovy/src/add.groovy"
+          printf 'assert 2 + 3 == 5\n' > "$root/groovy/tests/add_test.groovy"
+          verify_fixture "$root/groovy" groovy
+
+          mkdir -p "$root/clojure/src" "$root/clojure/tests"
+          printf '(defn add [a b] (+ a b))\n' > "$root/clojure/src/add.clj"
+          printf '(assert (= (+ 2 3) 5))\n' > "$root/clojure/tests/add_test.clj"
+          verify_fixture "$root/clojure" clojure
+
+          mkdir -p "$root/visual-basic"
+          cat > "$root/visual-basic/demo.vbproj" <<'EOF'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net8.0</TargetFramework>
+            </PropertyGroup>
+          </Project>
+          EOF
+          cat > "$root/visual-basic/Program.vb" <<'EOF'
+          Module Program
+              Sub Main()
+                  If 2 + 3 <> 5 Then Throw New System.Exception("bad sum")
+              End Sub
+          End Module
+          EOF
+          verify_fixture "$root/visual-basic" visual-basic
+
+          mkdir -p "$root/object-pascal/src" "$root/object-pascal/tests"
+          printf 'program Demo;\nbegin\nend.\n' > "$root/object-pascal/src/demo.pas"
+          printf 'program AddTest;\nbegin\n  if 2 + 3 <> 5 then Halt(1);\nend.\n' > "$root/object-pascal/tests/add_test.pas"
+          verify_fixture "$root/object-pascal" object-pascal
+
+          mkdir -p "$root/matlab/src" "$root/matlab/tests"
+          printf 'x = 2 + 3;\nassert(x == 5);\n' > "$root/matlab/src/add.m"
+          printf 'assert(2 + 3 == 5);\n' > "$root/matlab/tests/add_test.m"
+          verify_fixture "$root/matlab" matlab
+
+          mkdir -p "$root/tcl/src" "$root/tcl/tests"
+          printf 'proc add {a b} { expr {$a + $b} }\n' > "$root/tcl/src/add.tcl"
+          printf 'if {[expr {2 + 3}] != 5} { error "bad sum" }\n' > "$root/tcl/tests/add_test.tcl"
+          verify_fixture "$root/tcl" tcl
+
+          mkdir -p "$root/nix/src" "$root/nix/tests"
+          printf '{ a ? 2, b ? 3 }: a + b\n' > "$root/nix/src/add.nix"
+          printf 'assert 2 + 3 == 5; 5\n' > "$root/nix/tests/add_test.nix"
+          verify_fixture "$root/nix" nix
+
+          mkdir -p "$root/gleam/src" "$root/gleam/test"
+          cat > "$root/gleam/gleam.toml" <<'EOF'
+          name = "vf_fixture"
+          version = "1.0.0"
+          target = "erlang"
+          EOF
+          printf 'pub fn add(a: Int, b: Int) -> Int { a + b }\n' > "$root/gleam/src/vf_fixture.gleam"
+          printf 'import vf_fixture\npub fn smoke_test() { assert vf_fixture.add(2, 3) == 5 }\n' > "$root/gleam/test/vf_fixture_test.gleam"
+          verify_fixture "$root/gleam" gleam
+
+          mkdir -p "$root/ada/src" "$root/ada/tests"
+          cat > "$root/ada/src/main.adb" <<'EOF'
+          procedure Main is
+          begin
+             null;
+          end Main;
+          EOF
+          cat > "$root/ada/tests/add_test.adb" <<'EOF'
+          procedure Add_Test is
+          begin
+             if 2 + 3 /= 5 then
+                raise Program_Error;
+             end if;
+          end Add_Test;
+          EOF
+          verify_fixture "$root/ada" ada
