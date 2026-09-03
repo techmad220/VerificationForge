@@ -265,6 +265,7 @@ macro_rules! profile {
     };
 }
 
+#[rustfmt::skip]
 pub static PROFILES: &[LanguageProfile] = &[
     profile!("c", "C", ["c", "h"], ["CMakeLists.txt", "Makefile", "meson.build"]),
     profile!("cpp", "C++", ["cc", "cpp", "cxx", "hh", "hpp", "hxx"], ["CMakeLists.txt", "Makefile", "meson.build"]),
