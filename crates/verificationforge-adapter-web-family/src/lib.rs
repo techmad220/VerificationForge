@@ -989,7 +989,7 @@ impl WebInventory {
         }
         if repo.join("deno.json").is_file()
             || repo.join("deno.jsonc").is_file()
-            || repository_contains_all(repo, &["deno."])
+            || repo.join("deno.lock").is_file()
         {
             inventory.runtimes.insert("Deno");
         }
@@ -1469,20 +1469,6 @@ fn collect_files(path: &Path, files: &mut Vec<PathBuf>) {
 
 fn repository_contains_source(profile: SourceProfile, repo: &Path, markers: &[&str]) -> bool {
     source_files(profile, repo).iter().any(|path| {
-        fs::read_to_string(path)
-            .map(|content| markers.iter().any(|marker| content.contains(marker)))
-            .unwrap_or(false)
-    })
-}
-
-fn repository_contains_all(repo: &Path, markers: &[&str]) -> bool {
-    repository_files(repo).iter().any(|path| {
-        let Ok(metadata) = fs::metadata(path) else {
-            return false;
-        };
-        if metadata.len() > MAX_SCAN_BYTES {
-            return false;
-        }
         fs::read_to_string(path)
             .map(|content| markers.iter().any(|marker| content.contains(marker)))
             .unwrap_or(false)
