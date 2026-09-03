@@ -101,12 +101,21 @@ jobs:
           verify_fixture() {
             local dir="$1"
             local adapter="$2"
-            local out
-            out="$(cargo run -q -p verificationforge-cli -- "$dir" --level patch --no-journal)"
+            local out status
+            echo "=== VERIFY_FIXTURE adapter=$adapter dir=$dir ==="
+            set +e
+            out="$(cargo run -q -p verificationforge-cli -- "$dir" --level patch --no-journal 2>&1)"
+            status=$?
+            set -e
             printf '%s\n' "$out"
+            if [ "$status" -ne 0 ]; then
+              echo "FIXTURE_FAILED adapter=$adapter exit=$status" >&2
+              return "$status"
+            fi
             test "$(grep -c "adapter=$adapter " <<<"$out")" -eq 1
             grep -F 'VERIFICATIONFORGE_BARE_PASSES=0' <<<"$out"
             grep -F 'VERIFICATIONFORGE_ACCEPTED=true' <<<"$out"
+            echo "FIXTURE_PASSED adapter=$adapter"
           }
 
           mkdir -p "$root/swift/src" "$root/swift/tests"
