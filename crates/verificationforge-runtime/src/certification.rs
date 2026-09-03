@@ -1,4 +1,4 @@
-use verificationforge_core::{Finding, VerificationPolicy};
+use verificationforge_core::{CheckStatus, Finding, VerificationPolicy};
 
 use crate::{ContentAddress, VerificationReport};
 
@@ -11,6 +11,8 @@ pub struct CertificationArtifact {
     pub accepted: bool,
     pub failed_checks: usize,
     pub unsupported_checks: usize,
+    pub evidence_backed_passes: usize,
+    pub bare_passes: usize,
     pub blockers: Vec<Finding>,
 }
 
@@ -26,7 +28,32 @@ impl CertificationArtifact {
             .map(|entry| entry.result.clone())
             .collect::<Vec<_>>();
         let policy_decision = policy.evaluate(report.level, &results);
-        let accepted = report.accepted && policy_decision.accepted;
+        let evidence_backed_passes = results
+            .iter()
+            .filter(|result| {
+                result.status == CheckStatus::Pass && result.has_reproducible_evidence()
+            })
+            .count();
+        let bare_passes = results
+            .iter()
+            .filter(|result| {
+                result.status == CheckStatus::Pass && !result.has_reproducible_evidence()
+            })
+            .count();
+        let mut blockers = policy_decision.blockers;
+        blockers.extend(results.iter().filter_map(|result| {
+            (result.status == CheckStatus::Pass && !result.has_reproducible_evidence()).then(|| {
+                Finding {
+                    code: "VF_CERT_NO_EVIDENCE".into(),
+                    message: format!(
+                        "{} returned PASS without reproducible VF_EVIDENCE",
+                        result.check
+                    ),
+                    blocking: true,
+                }
+            })
+        }));
+        let accepted = report.accepted && blockers.is_empty();
         let mut canonical = Vec::new();
         canonical.extend_from_slice(repository_address.0.as_bytes());
         canonical.extend_from_slice(policy.name.as_bytes());
@@ -42,6 +69,10 @@ impl CertificationArtifact {
                 canonical.push(u8::from(finding.blocking));
             }
         }
+        for blocker in &blockers {
+            canonical.extend_from_slice(blocker.code.as_bytes());
+            canonical.extend_from_slice(blocker.message.as_bytes());
+        }
         Self {
             id: ContentAddress::from_bytes(&canonical),
             repository_address,
@@ -50,7 +81,9 @@ impl CertificationArtifact {
             accepted,
             failed_checks: report.failed_checks(),
             unsupported_checks: report.unsupported_checks(),
-            blockers: policy_decision.blockers,
+            evidence_backed_passes,
+            bare_passes,
+            blockers,
         }
     }
 
@@ -74,7 +107,8 @@ impl CertificationArtifact {
                 "\"id\":\"{}\",\"repository_address\":\"{}\",",
                 "\"policy\":{{\"name\":\"{}\",\"version\":{}}},",
                 "\"accepted\":{},\"failed_checks\":{},",
-                "\"unsupported_checks\":{},\"blockers\":[{}]}}"
+                "\"unsupported_checks\":{},\"evidence_backed_passes\":{},",
+                "\"bare_passes\":{},\"blockers\":[{}]}}"
             ),
             self.id.0,
             self.repository_address.0,
@@ -83,6 +117,8 @@ impl CertificationArtifact {
             self.accepted,
             self.failed_checks,
             self.unsupported_checks,
+            self.evidence_backed_passes,
+            self.bare_passes,
             blockers
         )
     }
@@ -115,9 +151,8 @@ mod tests {
 
     use crate::AdapterCheckResult;
 
-    #[test]
-    fn certification_is_deterministic_and_machine_readable() {
-        let report = VerificationReport {
+    fn report_with(result: CheckResult) -> VerificationReport {
+        VerificationReport {
             level: VerificationLevel::Patch,
             detections: vec![LanguageDetection {
                 adapter_id: "rust".into(),
@@ -127,20 +162,51 @@ mod tests {
             checks: vec![AdapterCheckResult {
                 adapter_id: "rust".into(),
                 language: "Rust".into(),
-                result: CheckResult::pass("rust:build"),
+                result,
             }],
             accepted: true,
-        };
+        }
+    }
+
+    #[test]
+    fn certification_is_deterministic_and_machine_readable() {
+        let report = report_with(CheckResult::pass_with_evidence(
+            "rust:build",
+            "command=cargo check exit=0",
+        ));
         let mut policy = VerificationPolicy::for_risk(RiskTier::Low);
         policy.required_checks.clear();
         let repository = ContentAddress::from_bytes(b"repo");
         let first = CertificationArtifact::from_report(&report, repository.clone(), &policy);
         let second = CertificationArtifact::from_report(&report, repository, &policy);
         assert_eq!(first.id, second.id);
+        assert!(first.accepted);
+        assert_eq!(first.evidence_backed_passes, 1);
+        assert_eq!(first.bare_passes, 0);
         assert!(
             first
                 .to_json()
                 .contains("verificationforge.certification.v1")
+        );
+    }
+
+    #[test]
+    fn bare_pass_cannot_be_certified() {
+        let report = report_with(CheckResult::pass("rust:build"));
+        let mut policy = VerificationPolicy::for_risk(RiskTier::Low);
+        policy.required_checks.clear();
+        let artifact = CertificationArtifact::from_report(
+            &report,
+            ContentAddress::from_bytes(b"repo"),
+            &policy,
+        );
+        assert!(!artifact.accepted);
+        assert_eq!(artifact.bare_passes, 1);
+        assert!(
+            artifact
+                .blockers
+                .iter()
+                .any(|finding| finding.code == "VF_CERT_NO_EVIDENCE")
         );
     }
 }
