@@ -11,6 +11,7 @@ members = [
     "crates/verificationforge-adapter-script-family",
     "crates/verificationforge-adapter-assembly",
     "crates/verificationforge-adapter-web-family",
+    "crates/verificationforge-adapter-popular-family",
     "crates/verificationforge-adapter-fallback",
     "apps/verificationforge-cli",
 ]
