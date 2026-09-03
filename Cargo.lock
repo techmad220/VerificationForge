@@ -3,6 +3,13 @@
 version = 4
 
 [[package]]
+name = "verificationforge-adapter-fallback"
+version = "0.1.0"
+dependencies = [
+ "verificationforge-core",
+]
+
+[[package]]
 name = "verificationforge-adapter-python"
 version = "0.1.0"
 dependencies = [
@@ -20,6 +27,7 @@ dependencies = [
 name = "verificationforge-cli"
 version = "0.1.0"
 dependencies = [
+ "verificationforge-adapter-fallback",
  "verificationforge-adapter-python",
  "verificationforge-adapter-rust",
  "verificationforge-runtime",
