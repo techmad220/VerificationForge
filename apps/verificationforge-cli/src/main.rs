@@ -7,6 +7,7 @@ use verificationforge_adapter_c_family::{CAdapter, CSharpAdapter, CppAdapter};
 use verificationforge_adapter_fallback::builtin_fallback_adapters;
 use verificationforge_adapter_go::GoAdapter;
 use verificationforge_adapter_js_family::{JavaScriptAdapter, TypeScriptAdapter};
+use verificationforge_adapter_jvm_family::{JavaAdapter, KotlinAdapter, ScalaAdapter};
 use verificationforge_adapter_python::PythonAdapter;
 use verificationforge_adapter_rust::RustAdapter;
 use verificationforge_runtime::{
@@ -58,6 +59,9 @@ fn run() -> Result<bool, String> {
     registry.register(Arc::new(CAdapter));
     registry.register(Arc::new(CppAdapter));
     registry.register(Arc::new(CSharpAdapter));
+    registry.register(Arc::new(JavaAdapter));
+    registry.register(Arc::new(KotlinAdapter));
+    registry.register(Arc::new(ScalaAdapter));
     for adapter in builtin_fallback_adapters() {
         registry.register(adapter);
     }
