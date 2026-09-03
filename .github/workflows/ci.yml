@@ -25,24 +25,6 @@ jobs:
         run: cargo install cargo-llvm-cov --locked --version 0.9.0
       - name: Verify a real Rust Commit gate
         run: cargo test -p verificationforge-cli --test commit_gate_real_rust -- --ignored --nocapture
-      - name: Instrument Certification prerequisite diagnostics
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          path = Path("apps/verificationforge-cli/tests/certification_gate_real_rust.rs")
-          text = path.read_text()
-          needle = '    assert!(report.commit.accepted, "CommitGate prerequisite failed");'
-          replacement = '''    if !report.commit.accepted {
-              eprintln!("PATCH_ACCEPTED={} PATCH_ENTRIES={:#?}", report.commit.checkpoint.patch.accepted, report.commit.checkpoint.patch.entries);
-              eprintln!("CHECKPOINT_ACCEPTED={} CHECKPOINT_ENTRIES={:#?}", report.commit.checkpoint.accepted, report.commit.checkpoint.entries);
-              eprintln!("COMMIT_ENTRIES={:#?}", report.commit.entries);
-          }
-          assert!(report.commit.accepted, "CommitGate prerequisite failed");'''
-          count = text.count(needle)
-          assert count == 2, f"expected 2 prerequisite assertions, found {count}"
-          path.write_text(text.replace(needle, replacement))
-          PY
       - name: Verify a real Rust Certification gate
         run: cargo test -p verificationforge-cli --test certification_gate_real_rust -- --ignored --nocapture
       - name: Self-verify Rust patch gate
