@@ -412,8 +412,12 @@ fn scan_semantic_fakes(repo: &Path, path: &Path, content: &str) -> Vec<Finding> 
 }
 
 fn rust_function_name(line: &str) -> Option<&str> {
-    let marker = line.find("fn ")? + 3;
-    let rest = &line[marker..];
+    let marker = line.find("fn ")?;
+    let prefix = &line[..marker];
+    if prefix.contains('"') || prefix.contains("//") || prefix.contains("/*") {
+        return None;
+    }
+    let rest = &line[marker + 3..];
     let end = rest
         .find(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
         .unwrap_or(rest.len());
@@ -638,6 +642,18 @@ mod tests {
                 .any(|finding| finding.code == "VF_FAKE_IMPLEMENTATION")
         );
         fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn semantic_scanner_ignores_embedded_source_text() {
+        assert_eq!(
+            rust_function_name("let fixture = \"pub fn authorize_user() -> bool { true }\";"),
+            None
+        );
+        assert_eq!(
+            rust_function_name("// pub fn authorize_user() -> bool { true }"),
+            None
+        );
     }
 
     #[test]
