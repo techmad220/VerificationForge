@@ -163,11 +163,11 @@ impl StateMachineModel {
             .collect::<Vec<_>>();
         let mut reachable = BTreeSet::new();
         let mut queue = VecDeque::new();
-        if let Some(initial) = &self.initial_state {
-            if self.states.contains(initial) {
-                reachable.insert(initial.clone());
-                queue.push_back(initial.clone());
-            }
+        if let Some(initial) = &self.initial_state
+            && self.states.contains(initial)
+        {
+            reachable.insert(initial.clone());
+            queue.push_back(initial.clone());
         }
         while let Some(state) = queue.pop_front() {
             for transition in self.transitions.iter().filter(|item| item.from == state) {
