@@ -216,12 +216,7 @@ impl LanguageAdapter for CSharpAdapter {
     }
 
     fn run_format_check(&self, repo: &Path, _execution: &dyn ExecutionAdapter) -> CheckResult {
-        whitespace_format_check(
-            "csharp",
-            "C#",
-            &files_with_extensions(repo, &["cs"]),
-            repo,
-        )
+        whitespace_format_check("csharp", "C#", &files_with_extensions(repo, &["cs"]), repo)
     }
 
     fn run_targeted_tests(
@@ -359,10 +354,7 @@ fn inventory_native(profile: NativeProfile, repo: &Path) -> Result<Vec<SymbolId>
                 if let Some(rest) = trimmed.strip_prefix(prefix) {
                     let name = identifier(rest);
                     if !name.is_empty() {
-                        symbols.push(SymbolId(format!(
-                            "{}:{kind}:{relative}:{name}",
-                            profile.id
-                        )));
+                        symbols.push(SymbolId(format!("{}:{kind}:{relative}:{name}", profile.id)));
                     }
                 }
             }
@@ -387,14 +379,22 @@ fn run_native_check(
 ) -> CheckResult {
     match check {
         CheckKind::Build => compile_native_objects(profile, repo, execution),
-        CheckKind::TypeCheck => native_syntax_check(profile, repo, execution, check.as_str(), false),
+        CheckKind::TypeCheck => {
+            native_syntax_check(profile, repo, execution, check.as_str(), false)
+        }
         CheckKind::Lint => native_syntax_check(profile, repo, execution, check.as_str(), true),
         CheckKind::Test => run_native_tests(profile, repo, execution),
         CheckKind::Dependencies => native_dependencies(profile, repo, execution),
         CheckKind::Placeholders => scan_native_placeholders(profile, repo),
         CheckKind::Concurrency => {
             if has_native_concurrency(repo) {
-                required_harness(profile.id, profile.language, execution, repo, check.as_str())
+                required_harness(
+                    profile.id,
+                    profile.language,
+                    execution,
+                    repo,
+                    check.as_str(),
+                )
             } else {
                 CheckResult::skipped(
                     format!("{}:{}", profile.id, check.as_str()),
@@ -404,7 +404,13 @@ fn run_native_check(
         }
         CheckKind::Ui => {
             if has_native_ui_surface(repo) {
-                required_harness(profile.id, profile.language, execution, repo, check.as_str())
+                required_harness(
+                    profile.id,
+                    profile.language,
+                    execution,
+                    repo,
+                    check.as_str(),
+                )
             } else {
                 CheckResult::skipped(
                     format!("{}:{}", profile.id, check.as_str()),
@@ -419,9 +425,13 @@ fn run_native_check(
         | CheckKind::Contracts
         | CheckKind::Stress
         | CheckKind::FaultInjection
-        | CheckKind::FormalProof => {
-            required_harness(profile.id, profile.language, execution, repo, check.as_str())
-        }
+        | CheckKind::FormalProof => required_harness(
+            profile.id,
+            profile.language,
+            execution,
+            repo,
+            check.as_str(),
+        ),
     }
 }
 
@@ -434,7 +444,10 @@ fn compile_native_objects(
         return CheckResult::fail(
             format!("{}:build", profile.id),
             "VF_NATIVE_COMPILER_MISSING",
-            format!("{} repository detected but {} is not executable", profile.language, profile.compiler),
+            format!(
+                "{} repository detected but {} is not executable",
+                profile.language, profile.compiler
+            ),
         );
     }
     let mut files = source_files(profile, repo)
@@ -482,7 +495,10 @@ fn compile_native_objects(
     }
     CheckResult::pass_with_evidence(
         format!("{}:build", profile.id),
-        format!("compiler={} standard={} translation-units={compiled} objects-written-outside-repository=true", profile.compiler, profile.standard),
+        format!(
+            "compiler={} standard={} translation-units={compiled} objects-written-outside-repository=true",
+            profile.compiler, profile.standard
+        ),
     )
 }
 
@@ -536,7 +552,10 @@ fn native_targeted_tests(
     if !affected && !scope.requires_full_verification {
         return CheckResult::skipped(
             format!("{}:targeted-test", profile.id),
-            format!("no changed {} source maps to this adapter", profile.language),
+            format!(
+                "no changed {} source maps to this adapter",
+                profile.language
+            ),
         );
     }
     if native_test_sources(profile, repo).is_empty() && !make_has_target(repo, "test") {
@@ -578,9 +597,23 @@ fn native_property_tests(
     repo: &Path,
     execution: &dyn ExecutionAdapter,
 ) -> CheckResult {
-    if repository_contains(repo, &["rapidcheck", "Catch2::Generators", "RC_ASSERT", "hypothesis::"]) {
+    if repository_contains(
+        repo,
+        &[
+            "rapidcheck",
+            "Catch2::Generators",
+            "RC_ASSERT",
+            "hypothesis::",
+        ],
+    ) {
         if native_test_sources(profile, repo).is_empty() {
-            required_harness(profile.id, profile.language, execution, repo, "checkpoint-property")
+            required_harness(
+                profile.id,
+                profile.language,
+                execution,
+                repo,
+                "checkpoint-property",
+            )
         } else {
             rename_check(
                 run_native_tests(profile, repo, execution),
@@ -721,7 +754,12 @@ fn native_dependencies(
 }
 
 fn scan_native_placeholders(profile: NativeProfile, repo: &Path) -> CheckResult {
-    scan_placeholders(profile.id, profile.language, &source_files(profile, repo), repo)
+    scan_placeholders(
+        profile.id,
+        profile.language,
+        &source_files(profile, repo),
+        repo,
+    )
 }
 
 fn native_test_sources(profile: NativeProfile, repo: &Path) -> Vec<PathBuf> {
@@ -740,9 +778,9 @@ fn is_test_source(path: &Path) -> bool {
     name.starts_with("test_")
         || name.contains("_test.")
         || name.contains(".test.")
-        || path.components().any(|component| {
-            matches!(component.as_os_str().to_str(), Some("test" | "tests"))
-        })
+        || path
+            .components()
+            .any(|component| matches!(component.as_os_str().to_str(), Some("test" | "tests")))
 }
 
 fn is_entrypoint_source(path: &Path) -> bool {
@@ -751,7 +789,10 @@ fn is_entrypoint_source(path: &Path) -> bool {
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    matches!(name.as_str(), "main.c" | "main.cc" | "main.cpp" | "main.cxx")
+    matches!(
+        name.as_str(),
+        "main.c" | "main.cc" | "main.cpp" | "main.cxx"
+    )
 }
 
 fn make_has_target(repo: &Path, target: &str) -> bool {
@@ -793,7 +834,10 @@ fn has_native_ui_surface(repo: &Path) -> bool {
 }
 
 fn has_native_api_surface(repo: &Path) -> bool {
-    repository_contains(repo, &["socket(", "bind(", "listen(", "accept(", "curl_easy_"])
+    repository_contains(
+        repo,
+        &["socket(", "bind(", "listen(", "accept(", "curl_easy_"],
+    )
 }
 
 fn run_csharp_check(
@@ -808,12 +852,9 @@ fn run_csharp_check(
         CheckKind::Test => run_csharp_tests(repo, execution),
         CheckKind::Dependencies => csharp_dependencies(repo, execution),
         CheckKind::Security => csharp_security(repo, execution),
-        CheckKind::Placeholders => scan_placeholders(
-            "csharp",
-            "C#",
-            &files_with_extensions(repo, &["cs"]),
-            repo,
-        ),
+        CheckKind::Placeholders => {
+            scan_placeholders("csharp", "C#", &files_with_extensions(repo, &["cs"]), repo)
+        }
         CheckKind::Concurrency => {
             if repository_contains(
                 repo,
@@ -893,7 +934,12 @@ fn run_csharp_tests(repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResul
         let args = if framework {
             vec!["test".into(), relative, "--nologo".into(), "-v:q".into()]
         } else {
-            vec!["run".into(), "--project".into(), relative, "--nologo".into()]
+            vec![
+                "run".into(),
+                "--project".into(),
+                relative,
+                "--nologo".into(),
+            ]
         };
         let result = execution.execute("dotnet", &args, repo);
         match result {
@@ -906,11 +952,7 @@ fn run_csharp_tests(repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResul
                 );
             }
             Err(error) => {
-                return CheckResult::fail(
-                    "csharp:test",
-                    "VF_CSHARP_TEST_EXECUTION_FAILED",
-                    error,
-                );
+                return CheckResult::fail("csharp:test", "VF_CSHARP_TEST_EXECUTION_FAILED", error);
             }
         }
     }
@@ -1032,9 +1074,7 @@ fn inventory_csharp(repo: &Path) -> Result<Vec<SymbolId>, String> {
                     let rest = &padded[index + marker.len()..];
                     let name = identifier(rest);
                     if !name.is_empty() {
-                        symbols.push(SymbolId(format!(
-                            "csharp:{kind}:{relative}:{name}"
-                        )));
+                        symbols.push(SymbolId(format!("csharp:{kind}:{relative}:{name}")));
                     }
                 }
             }
@@ -1080,12 +1120,7 @@ fn is_test_project(path: &Path) -> bool {
         || lower.contains(".test.csproj")
 }
 
-fn scan_placeholders(
-    id: &str,
-    language: &str,
-    files: &[PathBuf],
-    repo: &Path,
-) -> CheckResult {
+fn scan_placeholders(id: &str, language: &str, files: &[PathBuf], repo: &Path) -> CheckResult {
     let mut findings = Vec::new();
     let mut scanned = 0usize;
     for path in files {
@@ -1133,7 +1168,9 @@ fn scan_placeholders(
     if findings.is_empty() {
         CheckResult::pass_with_evidence(
             format!("{id}:placeholders"),
-            format!("scanned {scanned} {language} source files for placeholder and fake-success patterns"),
+            format!(
+                "scanned {scanned} {language} source files for placeholder and fake-success patterns"
+            ),
         )
     } else {
         CheckResult {
@@ -1146,9 +1183,16 @@ fn scan_placeholders(
 
 fn sensitive_constant_gate(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
-    let sensitive = ["authoriz", "authenticate", "permission", "isadmin", "hasaccess", "canaccess"]
-        .iter()
-        .any(|marker| lower.contains(marker));
+    let sensitive = [
+        "authoriz",
+        "authenticate",
+        "permission",
+        "isadmin",
+        "hasaccess",
+        "canaccess",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker));
     sensitive
         && (lower.contains("return true")
             || lower.contains("return false")
@@ -1173,7 +1217,11 @@ fn whitespace_format_check(
             if line.ends_with(' ') || line.ends_with('\t') {
                 findings.push(Finding {
                     code: "VF_FORMAT_TRAILING_WHITESPACE".into(),
-                    message: format!("{}:{} has trailing whitespace", display_relative(repo, path), index + 1),
+                    message: format!(
+                        "{}:{} has trailing whitespace",
+                        display_relative(repo, path),
+                        index + 1
+                    ),
                     blocking: true,
                 });
             }
@@ -1181,7 +1229,10 @@ fn whitespace_format_check(
         if !content.is_empty() && !content.ends_with('\n') {
             findings.push(Finding {
                 code: "VF_FORMAT_FINAL_NEWLINE".into(),
-                message: format!("{} is missing a final newline", display_relative(repo, path)),
+                message: format!(
+                    "{} is missing a final newline",
+                    display_relative(repo, path)
+                ),
                 blocking: true,
             });
         }
@@ -1212,7 +1263,9 @@ fn required_harness(
         || {
             CheckResult::unsupported(
                 format!("{id}:{check_name}"),
-                format!("required {language} harness is missing: .verificationforge/{harness}.argv"),
+                format!(
+                    "required {language} harness is missing: .verificationforge/{harness}.argv"
+                ),
             )
         },
     )
@@ -1236,11 +1289,7 @@ fn run_named(
             "VF_COMMAND_FAILED",
             command_failure(program, &args, &output),
         ),
-        Err(error) => CheckResult::fail(
-            format!("{id}:{check_name}"),
-            "VF_EXECUTION_FAILED",
-            error,
-        ),
+        Err(error) => CheckResult::fail(format!("{id}:{check_name}"), "VF_EXECUTION_FAILED", error),
     }
 }
 
@@ -1353,9 +1402,12 @@ fn c_function_name(line: &str) -> Option<&str> {
 }
 
 fn identifier(value: &str) -> &str {
-    let value = value.trim_start_matches(|character: char| character == '*' || character.is_whitespace());
+    let value =
+        value.trim_start_matches(|character: char| character == '*' || character.is_whitespace());
     let end = value
-        .find(|character: char| !(character.is_ascii_alphanumeric() || character == '_' || character == ':'))
+        .find(|character: char| {
+            !(character.is_ascii_alphanumeric() || character == '_' || character == ':')
+        })
         .unwrap_or(value.len());
     &value[..end]
 }
@@ -1400,8 +1452,11 @@ mod tests {
         fs::write(root.join("a.c"), "int a(void) { return 1; }\n").expect("write c");
         fs::write(root.join("b.cpp"), "int b() { return 2; }\n").expect("write cpp");
         fs::write(root.join("C.cs"), "public class C {}\n").expect("write csharp");
-        fs::write(root.join("C.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\" />\n")
-            .expect("write project");
+        fs::write(
+            root.join("C.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\" />\n",
+        )
+        .expect("write project");
         assert_eq!(CAdapter.detect(&root).expect("c").language, "C");
         assert_eq!(CppAdapter.detect(&root).expect("cpp").language, "C++");
         assert_eq!(CSharpAdapter.detect(&root).expect("csharp").language, "C#");
@@ -1432,8 +1487,11 @@ mod tests {
     fn native_format_policy_is_evidence_backed() {
         let root = temp_dir("format");
         fs::create_dir_all(&root).expect("create root");
-        fs::write(root.join("add.c"), "int add(int a, int b) { return a + b; }\n")
-            .expect("write source");
+        fs::write(
+            root.join("add.c"),
+            "int add(int a, int b) { return a + b; }\n",
+        )
+        .expect("write source");
         let result = whitespace_format_check(C.id, C.language, &source_files(C, &root), &root);
         assert_eq!(result.status, CheckStatus::Pass);
         assert!(result.has_reproducible_evidence());

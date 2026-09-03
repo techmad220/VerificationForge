@@ -241,10 +241,7 @@ fn add_declaration_symbol(
         if let Some(rest) = line.strip_prefix(prefix) {
             let name = identifier(rest);
             if !name.is_empty() {
-                symbols.push(SymbolId(format!(
-                    "{}:{kind}:{relative}:{name}",
-                    profile.id
-                )));
+                symbols.push(SymbolId(format!("{}:{kind}:{relative}:{name}", profile.id)));
             }
             return;
         }
@@ -387,8 +384,11 @@ fn run_check(
             if package_has_script(repo, "build") {
                 run_package_script(profile, execution, repo, check.as_str(), "build")
             } else {
-                run_parse(profile, repo, execution)
-                    .with_check_name(format!("{}:{}", profile.id, check.as_str()))
+                run_parse(profile, repo, execution).with_check_name(format!(
+                    "{}:{}",
+                    profile.id,
+                    check.as_str()
+                ))
             }
         }
         CheckKind::TypeCheck => {
@@ -424,7 +424,12 @@ fn run_check(
         CheckKind::Concurrency => {
             if repository_contains(
                 repo,
-                &["worker_threads", "SharedArrayBuffer", "Atomics.", "new Worker("],
+                &[
+                    "worker_threads",
+                    "SharedArrayBuffer",
+                    "Atomics.",
+                    "new Worker(",
+                ],
             ) {
                 required_harness(profile, execution, repo, check.as_str())
             } else {
@@ -464,11 +469,7 @@ impl CheckResultExt for CheckResult {
     }
 }
 
-fn baseline_lint(
-    profile: JsProfile,
-    repo: &Path,
-    execution: &dyn ExecutionAdapter,
-) -> CheckResult {
+fn baseline_lint(profile: JsProfile, repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResult {
     let parsed = run_parse(profile, repo, execution);
     if parsed.status != CheckStatus::Pass {
         return parsed.with_check_name(format!("{}:lint", profile.id));
@@ -506,11 +507,7 @@ fn run_tests(profile: JsProfile, repo: &Path, execution: &dyn ExecutionAdapter) 
     )
 }
 
-fn run_coverage(
-    profile: JsProfile,
-    repo: &Path,
-    execution: &dyn ExecutionAdapter,
-) -> CheckResult {
+fn run_coverage(profile: JsProfile, repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResult {
     if package_has_script(repo, "coverage") {
         return run_package_script(profile, execution, repo, "coverage", "coverage");
     }
@@ -545,11 +542,7 @@ fn run_dependencies(
     run_named(profile, execution, repo, "dependencies", manager, args)
 }
 
-fn run_security(
-    profile: JsProfile,
-    repo: &Path,
-    execution: &dyn ExecutionAdapter,
-) -> CheckResult {
+fn run_security(profile: JsProfile, repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResult {
     let Some(manager) = package_manager(execution, repo) else {
         return required_harness(profile, execution, repo, "security");
     };
@@ -679,7 +672,9 @@ fn run_package_script(
         return CheckResult::fail(
             format!("{}:{check_name}", profile.id),
             "VF_JS_PACKAGE_MANAGER_MISSING",
-            format!("package script {script} exists but no supported package manager is executable"),
+            format!(
+                "package script {script} exists but no supported package manager is executable"
+            ),
         );
     };
     let args = match manager {
@@ -737,7 +732,10 @@ fn required_harness(
     .unwrap_or_else(|| {
         CheckResult::unsupported(
             format!("{}:{check_name}", profile.id),
-            format!("required {} harness is missing: .verificationforge/{harness}.argv", profile.language),
+            format!(
+                "required {} harness is missing: .verificationforge/{harness}.argv",
+                profile.language
+            ),
         )
     })
 }
@@ -754,7 +752,11 @@ fn whitespace_format_check(profile: JsProfile, repo: &Path) -> CheckResult {
             if line.ends_with(' ') || line.ends_with('\t') {
                 findings.push(Finding {
                     code: "VF_FORMAT_TRAILING_WHITESPACE".into(),
-                    message: format!("{}:{} has trailing whitespace", display_relative(repo, &path), index + 1),
+                    message: format!(
+                        "{}:{} has trailing whitespace",
+                        display_relative(repo, &path),
+                        index + 1
+                    ),
                     blocking: true,
                 });
             }
@@ -762,7 +764,10 @@ fn whitespace_format_check(profile: JsProfile, repo: &Path) -> CheckResult {
         if !content.is_empty() && !content.ends_with('\n') {
             findings.push(Finding {
                 code: "VF_FORMAT_FINAL_NEWLINE".into(),
-                message: format!("{} is missing a final newline", display_relative(repo, &path)),
+                message: format!(
+                    "{} is missing a final newline",
+                    display_relative(repo, &path)
+                ),
                 blocking: true,
             });
         }
@@ -804,14 +809,22 @@ fn scan_placeholders(profile: JsProfile, repo: &Path) -> CheckResult {
             {
                 findings.push(Finding {
                     code: "VF_PLACEHOLDER".into(),
-                    message: format!("{}:{} contains an unfinished implementation marker", display_relative(repo, &path), index + 1),
+                    message: format!(
+                        "{}:{} contains an unfinished implementation marker",
+                        display_relative(repo, &path),
+                        index + 1
+                    ),
                     blocking: true,
                 });
             }
             if sensitive_constant_gate(line) {
                 findings.push(Finding {
                     code: "VF_FAKE_IMPLEMENTATION".into(),
-                    message: format!("{}:{} contains a constant authorization/permission decision", display_relative(repo, &path), index + 1),
+                    message: format!(
+                        "{}:{} contains a constant authorization/permission decision",
+                        display_relative(repo, &path),
+                        index + 1
+                    ),
                     blocking: true,
                 });
             }
@@ -820,7 +833,10 @@ fn scan_placeholders(profile: JsProfile, repo: &Path) -> CheckResult {
     if findings.is_empty() {
         CheckResult::pass_with_evidence(
             format!("{}:placeholders", profile.id),
-            format!("scanned {scanned} {} source files for placeholder and fake-success patterns", profile.language),
+            format!(
+                "scanned {scanned} {} source files for placeholder and fake-success patterns",
+                profile.language
+            ),
         )
     } else {
         CheckResult {
@@ -833,9 +849,16 @@ fn scan_placeholders(profile: JsProfile, repo: &Path) -> CheckResult {
 
 fn sensitive_constant_gate(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
-    let sensitive = ["authoriz", "authenticate", "permission", "isadmin", "hasaccess", "canaccess"]
-        .iter()
-        .any(|marker| lower.contains(marker));
+    let sensitive = [
+        "authoriz",
+        "authenticate",
+        "permission",
+        "isadmin",
+        "hasaccess",
+        "canaccess",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker));
     sensitive
         && (lower.contains("=> true")
             || lower.contains("=> false")
@@ -883,11 +906,17 @@ fn executable_available(execution: &dyn ExecutionAdapter, repo: &Path, program: 
 
 fn has_tests(profile: JsProfile, repo: &Path) -> bool {
     source_files(profile, repo).iter().any(|path| {
-        let name = path.file_name().and_then(|value| value.to_str()).unwrap_or_default();
+        let name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
         name.contains(".test.")
             || name.contains(".spec.")
             || path.components().any(|component| {
-                matches!(component.as_os_str().to_str(), Some("test" | "tests" | "__tests__"))
+                matches!(
+                    component.as_os_str().to_str(),
+                    Some("test" | "tests" | "__tests__")
+                )
             })
     })
 }
@@ -1001,7 +1030,9 @@ fn display_relative(repo: &Path, path: &Path) -> String {
 fn identifier(value: &str) -> &str {
     let value = value.trim_start();
     let end = value
-        .find(|character: char| !(character.is_ascii_alphanumeric() || character == '_' || character == '$'))
+        .find(|character: char| {
+            !(character.is_ascii_alphanumeric() || character == '_' || character == '$')
+        })
         .unwrap_or(value.len());
     &value[..end]
 }
@@ -1060,11 +1091,17 @@ mod tests {
         fs::write(root.join("app.js"), "export const one = 1;\n").expect("write js");
         fs::write(root.join("typed.ts"), "export const two: number = 2;\n").expect("write ts");
         assert_eq!(
-            JavaScriptAdapter.detect(&root).expect("javascript").language,
+            JavaScriptAdapter
+                .detect(&root)
+                .expect("javascript")
+                .language,
             "JavaScript"
         );
         assert_eq!(
-            TypeScriptAdapter.detect(&root).expect("typescript").language,
+            TypeScriptAdapter
+                .detect(&root)
+                .expect("typescript")
+                .language,
             "TypeScript"
         );
         fs::remove_dir_all(root).ok();
