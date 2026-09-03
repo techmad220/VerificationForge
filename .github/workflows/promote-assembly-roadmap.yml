@@ -1,0 +1,49 @@
+name: Promote verified Assembly roadmap
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    if: github.head_ref == 'agent/expand-assembly'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/expand-assembly
+      - name: Record verified Assembly support and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          tracker = Path('docs/MASTER_TRACKER.md')
+          text = tracker.read_text()
+          anchor = '- [x] C#\n'
+          entry = '- [x] Assembly\n'
+          if entry not in text:
+              if anchor not in text:
+                  raise SystemExit('language roadmap anchor missing')
+              text = text.replace(anchor, anchor + entry, 1)
+          marker = 'The checked items above are backed by implemented code and CI rather than roadmap intent alone. '
+          note = (
+              'Assembly is now first-class through the native Assembly adapter, covering GNU-style `.s`/`.S` and NASM-style `.asm` sources. '
+              'The adapter inventories labels and exported symbols, assembles build/type/lint outputs outside the repository, assembles/links/executes native test programs, inventories include directives, blocks unfinished or credential-like source markers, and fails closed to explicit harnesses for advanced checks. '
+              'Dedicated Assembly CI proves independent real GNU and NASM repositories through the public CLI, and the same exact implementation head passes Script Family CI, JVM Family CI, and the complete VerificationForge CI including real CommitGate and CertificationGate proofs. '
+          )
+          if note not in text:
+              if marker not in text:
+                  raise SystemExit('verified-notes marker missing')
+              text = text.replace(marker, marker + note, 1)
+          tracker.write_text(text)
+          PY
+          git rm .github/workflows/promote-assembly-roadmap.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/MASTER_TRACKER.md
+          git commit -m "Mark Assembly verified in roadmap"
+          git push origin HEAD:agent/expand-assembly
