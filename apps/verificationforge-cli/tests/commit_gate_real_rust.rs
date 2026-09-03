@@ -29,6 +29,16 @@ fn format_fixture(root: &Path) {
     assert!(status.success(), "fixture cargo fmt must succeed");
 }
 
+fn generate_lockfile(root: &Path) {
+    let status = Command::new("cargo")
+        .arg("generate-lockfile")
+        .arg("--offline")
+        .current_dir(root)
+        .status()
+        .expect("generate Cargo.lock for real Commit gate fixture");
+    assert!(status.success(), "fixture lockfile generation must succeed");
+}
+
 fn write_fixture(root: &Path, source: &str) {
     fs::create_dir_all(root.join("src/bin")).expect("create bin directory");
     fs::create_dir_all(root.join("tests")).expect("create integration directory");
@@ -69,6 +79,7 @@ fn integration_identity_and_double() {
     .expect("write fuzz harness");
 
     format_fixture(root);
+    generate_lockfile(root);
 }
 
 fn graph() -> UniversalCodeGraph {
