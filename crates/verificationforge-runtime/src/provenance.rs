@@ -100,7 +100,10 @@ impl ProvenanceStart {
         if evidence_ids.is_empty() {
             return Err("verification provenance requires at least one evidence id".into());
         }
-        if evidence_ids.iter().any(|evidence_id| evidence_id.trim().is_empty()) {
+        if evidence_ids
+            .iter()
+            .any(|evidence_id| evidence_id.trim().is_empty())
+        {
             return Err("verification provenance contains an empty evidence id".into());
         }
         Ok(VerifiedProvenance {
@@ -112,10 +115,16 @@ impl ProvenanceStart {
 }
 
 impl VerifiedProvenance {
-    pub fn attach_commit(self, commit_sha: impl Into<String>) -> Result<CommittedProvenance, String> {
+    pub fn attach_commit(
+        self,
+        commit_sha: impl Into<String>,
+    ) -> Result<CommittedProvenance, String> {
         let commit_sha = commit_sha.into();
         if !valid_commit_sha(&commit_sha) {
-            return Err("commit provenance requires a full 40- or 64-character hexadecimal object id".into());
+            return Err(
+                "commit provenance requires a full 40- or 64-character hexadecimal object id"
+                    .into(),
+            );
         }
         Ok(CommittedProvenance {
             verified: self,
@@ -334,10 +343,7 @@ mod tests {
             chain.evidence_ids,
             BTreeSet::from(["evidence-a".into(), "evidence-b".into()])
         );
-        assert_eq!(
-            chain.commit_sha,
-            "0123456789abcdef0123456789abcdef01234567"
-        );
+        assert_eq!(chain.commit_sha, "0123456789abcdef0123456789abcdef01234567");
         assert_eq!(chain.build_address, address("build"));
         assert_eq!(chain.artifact_address, address("artifact"));
         assert_eq!(chain.source_operation_sequence, 7);
