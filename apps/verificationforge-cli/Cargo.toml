@@ -16,4 +16,5 @@ verificationforge-adapter-c-family = { path = "../../crates/verificationforge-ad
 verificationforge-adapter-jvm-family = { path = "../../crates/verificationforge-adapter-jvm-family" }
 verificationforge-adapter-script-family = { path = "../../crates/verificationforge-adapter-script-family" }
 verificationforge-adapter-assembly = { path = "../../crates/verificationforge-adapter-assembly" }
+verificationforge-adapter-web-family = { path = "../../crates/verificationforge-adapter-web-family" }
 verificationforge-adapter-fallback = { path = "../../crates/verificationforge-adapter-fallback" }
