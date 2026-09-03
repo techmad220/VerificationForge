@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  rust-core:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,6 +18,38 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
       - run: cargo fmt --all -- --check
-      - run: cargo check --workspace
+      - run: cargo check --workspace --all-targets --locked
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      - run: cargo test --workspace --all-targets --locked
+      - name: Self-verify Rust patch gate
+        run: cargo run -p verificationforge-cli -- . --level patch
+      - name: Verify a real Python fixture
+        shell: bash
+        run: |
+          fixture="${RUNNER_TEMP}/verificationforge-python-fixture"
+          mkdir -p "${fixture}"
+          cat > "${fixture}/mathbox.py" <<'PY'
+          def add(left, right):
+              return left + right
+          PY
+          cat > "${fixture}/test_mathbox.py" <<'PY'
+          import unittest
+          import mathbox
+
+          class MathBoxTests(unittest.TestCase):
+              def test_add(self):
+                  self.assertEqual(mathbox.add(2, 3), 5)
+
+          if __name__ == "__main__":
+              unittest.main()
+          PY
+          cargo run -p verificationforge-cli -- "${fixture}" --level patch
+      - name: Unknown-language repositories must fail
+        shell: bash
+        run: |
+          fixture="${RUNNER_TEMP}/verificationforge-empty-fixture"
+          mkdir -p "${fixture}"
+          if cargo run -p verificationforge-cli -- "${fixture}" --level patch; then
+            echo "VerificationForge incorrectly accepted an unknown repository"
+            exit 1
+          fi
