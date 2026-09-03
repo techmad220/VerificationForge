@@ -6,9 +6,7 @@ use verificationforge_core::{
     SymbolId,
 };
 
-use crate::{
-    OperationContext, OperationPurpose, OperationTelemetry, TrackedDevelopmentSession,
-};
+use crate::{OperationContext, OperationPurpose, OperationTelemetry, TrackedDevelopmentSession};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentActionMetadata {
@@ -171,11 +169,8 @@ impl AgentBuildTask<'_> {
         to: &Path,
         metadata: AgentActionMetadata,
     ) -> Result<(), String> {
-        self.session.rename_file(
-            from,
-            to,
-            metadata.context(self.requirement.clone()),
-        )
+        self.session
+            .rename_file(from, to, metadata.context(self.requirement.clone()))
     }
 
     pub fn run_command(
@@ -184,11 +179,8 @@ impl AgentBuildTask<'_> {
         args: &[String],
         metadata: AgentActionMetadata,
     ) -> Result<ExecutionResult, String> {
-        self.session.run_command(
-            program,
-            args,
-            metadata.context(self.requirement.clone()),
-        )
+        self.session
+            .run_command(program, args, metadata.context(self.requirement.clone()))
     }
 
     pub fn run_fix_command(
@@ -292,10 +284,7 @@ mod tests {
         std::env::temp_dir().join(format!("verificationforge-agent-runtime-{nonce}"))
     }
 
-    fn runtime(
-        root: &Path,
-        execution: Arc<dyn ExecutionAdapter>,
-    ) -> AgentDevelopmentRuntime {
+    fn runtime(root: &Path, execution: Arc<dyn ExecutionAdapter>) -> AgentDevelopmentRuntime {
         AgentDevelopmentRuntime::new(
             root,
             "builder-agent",
@@ -341,12 +330,16 @@ mod tests {
 
         let operations = runtime.telemetry().operations();
         assert_eq!(operations.len(), 3);
-        assert!(operations
-            .iter()
-            .all(|operation| operation.requirement.as_ref() == Some(&requirement)));
-        assert!(operations
-            .iter()
-            .all(|operation| operation.agent == "builder-agent"));
+        assert!(
+            operations
+                .iter()
+                .all(|operation| operation.requirement.as_ref() == Some(&requirement))
+        );
+        assert!(
+            operations
+                .iter()
+                .all(|operation| operation.agent == "builder-agent")
+        );
         assert_eq!(operations[0].kind, AgentOperationKind::Write);
         assert_eq!(operations[0].symbols, vec![symbol]);
         assert_eq!(operations[1].kind, AgentOperationKind::Command);
@@ -355,11 +348,7 @@ mod tests {
         assert_eq!(operations[2].purpose, OperationPurpose::RegressionTest);
         assert_eq!(operations[2].evidence_ids, vec!["evidence-regression"]);
         assert_eq!(
-            execution
-                .calls
-                .lock()
-                .expect("calls lock poisoned")
-                .len(),
+            execution.calls.lock().expect("calls lock poisoned").len(),
             2
         );
         fs::remove_dir_all(root).ok();
@@ -422,11 +411,13 @@ mod tests {
                 .expect_err("evidence-free commit must fail");
             assert!(error.contains("VF_FIREWALL_EVIDENCE_REQUIRED"));
         }
-        assert!(execution
-            .calls
-            .lock()
-            .expect("calls lock poisoned")
-            .is_empty());
+        assert!(
+            execution
+                .calls
+                .lock()
+                .expect("calls lock poisoned")
+                .is_empty()
+        );
         assert_eq!(runtime.telemetry().failed_operations().count(), 1);
         fs::remove_dir_all(root).ok();
     }
@@ -454,11 +445,13 @@ mod tests {
                 .expect_err("blocking finding must prevent commit");
             assert!(error.contains("VF_FIREWALL_ACTIVE_BLOCKER"));
         }
-        assert!(execution
-            .calls
-            .lock()
-            .expect("calls lock poisoned")
-            .is_empty());
+        assert!(
+            execution
+                .calls
+                .lock()
+                .expect("calls lock poisoned")
+                .is_empty()
+        );
         fs::remove_dir_all(root).ok();
     }
 }
