@@ -2,7 +2,7 @@ use std::path::Path;
 
 use verificationforge_core::{CheckResult, CheckStatus, Finding, UniversalCodeGraph};
 
-use crate::{ContentAddress, RepositorySnapshot, VerificationEngine, certification_gate as legacy};
+use crate::{RepositorySnapshot, VerificationEngine, certification_gate as legacy};
 
 pub struct CertificationGate;
 
@@ -174,7 +174,7 @@ fn metric_value(result: &CheckResult, key: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CertificationGatePhase, CertificationWorkPlan};
+    use crate::{CertificationGatePhase, CertificationWorkPlan, ContentAddress};
 
     fn plan(phase: CertificationGatePhase, iterations: usize) -> CertificationWorkPlan {
         CertificationWorkPlan {
