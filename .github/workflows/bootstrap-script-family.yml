@@ -19,12 +19,22 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt
-      - name: Wire CLI, lock workspace, format, and remove helper
+      - name: Repair source, wire CLI, lock workspace, format, and remove helper
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
+
+          adapter = Path('crates/verificationforge-adapter-script-family/src/lib.rs')
+          source = adapter.read_text()
+          bad = ".replace(''', \"''\")"
+          replacement = ".replace(\"'\", \"''\")"
+          count = source.count(bad)
+          if count == 0:
+              raise SystemExit('expected PowerShell quote-escaping target not found')
+          adapter.write_text(source.replace(bad, replacement))
+
           path = Path('apps/verificationforge-cli/src/main.rs')
           text = path.read_text()
           import_marker = 'use verificationforge_adapter_rust::RustAdapter;\n'
