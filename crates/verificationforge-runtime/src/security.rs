@@ -102,12 +102,7 @@ fn scan_secrets(repo: &Path, path: &Path, content: &str, findings: &mut Vec<Find
             continue;
         }
         if contains_prefixed_token(line, &aws_access_key, 20) {
-            findings.push(secret_finding(
-                repo,
-                path,
-                line_number,
-                "cloud access key",
-            ));
+            findings.push(secret_finding(repo, path, line_number, "cloud access key"));
             continue;
         }
         if contains_prefixed_token(line, &slack_bot, 24)
@@ -214,9 +209,8 @@ fn hardcoded_secret_assignment(line: &str) -> Option<String> {
 }
 
 fn trailing_identifier(left: &str) -> Option<&str> {
-    let trimmed = left.trim_end_matches(|character: char| {
-        !character.is_ascii_alphanumeric() && character != '_'
-    });
+    let trimmed = left
+        .trim_end_matches(|character: char| !character.is_ascii_alphanumeric() && character != '_');
     let start = trimmed
         .rfind(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
         .map(|index| index + 1)
@@ -268,12 +262,7 @@ fn secret_finding(repo: &Path, path: &Path, line: usize, kind: &str) -> Finding 
     }
 }
 
-fn scan_suspicious_triggers(
-    repo: &Path,
-    path: &Path,
-    content: &str,
-    findings: &mut Vec<Finding>,
-) {
+fn scan_suspicious_triggers(repo: &Path, path: &Path, content: &str, findings: &mut Vec<Finding>) {
     if !is_source_file(path) {
         return;
     }
@@ -293,7 +282,10 @@ fn scan_suspicious_triggers(
             .map(|line| line.to_ascii_lowercase())
             .collect::<Vec<_>>()
             .join("\n");
-        if let Some(action) = actions.iter().find(|marker| window.contains(marker.as_str())) {
+        if let Some(action) = actions
+            .iter()
+            .find(|marker| window.contains(marker.as_str()))
+        {
             findings.push(Finding {
                 code: "VF_SUSPICIOUS_TRIGGER".into(),
                 message: format!(
@@ -431,8 +423,7 @@ fn is_scannable_file(path: &Path) -> bool {
             .unwrap_or_default()
             .to_ascii_lowercase()
             .as_str(),
-        "rs"
-            | "py"
+        "rs" | "py"
             | "pyi"
             | "toml"
             | "json"
@@ -472,8 +463,7 @@ fn is_source_file(path: &Path) -> bool {
             .unwrap_or_default()
             .to_ascii_lowercase()
             .as_str(),
-        "rs"
-            | "py"
+        "rs" | "py"
             | "js"
             | "jsx"
             | "ts"
@@ -517,22 +507,23 @@ mod tests {
         let root = temp_dir();
         fs::create_dir_all(root.join("src")).expect("create src");
         let secret = ["super", "secret-value"].concat();
-        fs::write(
-            root.join("src/app.py"),
-            format!("api_key = \"{secret}\"\n"),
-        )
-        .expect("write source");
+        fs::write(root.join("src/app.py"), format!("api_key = \"{secret}\"\n"))
+            .expect("write source");
 
         let result = scan_repository(&root);
         assert_eq!(result.status, CheckStatus::Fail);
-        assert!(result
-            .findings
-            .iter()
-            .any(|finding| finding.code == "VF_HARDCODED_SECRET"));
-        assert!(result
-            .findings
-            .iter()
-            .all(|finding| !finding.message.contains(&secret)));
+        assert!(
+            result
+                .findings
+                .iter()
+                .any(|finding| finding.code == "VF_HARDCODED_SECRET")
+        );
+        assert!(
+            result
+                .findings
+                .iter()
+                .all(|finding| !finding.message.contains(&secret))
+        );
         fs::remove_dir_all(root).ok();
     }
 
@@ -566,10 +557,12 @@ mod tests {
         .expect("write source");
         let result = scan_repository(&root);
         assert_eq!(result.status, CheckStatus::Fail);
-        assert!(result
-            .findings
-            .iter()
-            .any(|finding| finding.code == "VF_SUSPICIOUS_TRIGGER"));
+        assert!(
+            result
+                .findings
+                .iter()
+                .any(|finding| finding.code == "VF_SUSPICIOUS_TRIGGER")
+        );
         fs::remove_dir_all(root).ok();
     }
 
@@ -577,8 +570,11 @@ mod tests {
     fn clean_repository_produces_reproducible_security_evidence() {
         let root = temp_dir();
         fs::create_dir_all(root.join("src")).expect("create src");
-        fs::write(root.join("src/lib.rs"), "pub fn add(a: u8, b: u8) -> u8 { a + b }\n")
-            .expect("write source");
+        fs::write(
+            root.join("src/lib.rs"),
+            "pub fn add(a: u8, b: u8) -> u8 { a + b }\n",
+        )
+        .expect("write source");
         let result = scan_repository(&root);
         assert_eq!(result.status, CheckStatus::Pass);
         assert!(result.has_reproducible_evidence());
