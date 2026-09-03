@@ -51,10 +51,7 @@ impl LanguageAdapter for PythonAdapter {
                 } else if executable_available(execution, repo, "pyright") {
                     run_command(execution, repo, check, "pyright", &["."])
                 } else {
-                    CheckResult::unsupported(
-                        name(check),
-                        "neither mypy nor pyright is available",
-                    )
+                    CheckResult::unsupported(name(check), "neither mypy nor pyright is available")
                 }
             }
             CheckKind::Lint => {
@@ -76,13 +73,7 @@ impl LanguageAdapter for PythonAdapter {
             CheckKind::Coverage => run_coverage(execution, repo, &python),
             CheckKind::Mutation => {
                 if module_available(execution, repo, &python, "mutmut") {
-                    run_python(
-                        execution,
-                        repo,
-                        check,
-                        &python,
-                        &["-m", "mutmut", "run"],
-                    )
+                    run_python(execution, repo, check, &python, &["-m", "mutmut", "run"])
                 } else {
                     CheckResult::unsupported(name(check), "mutmut is not available")
                 }
@@ -100,13 +91,9 @@ impl LanguageAdapter for PythonAdapter {
                     CheckResult::unsupported(name(check), "bandit is not available")
                 }
             }
-            CheckKind::Dependencies => run_python(
-                execution,
-                repo,
-                check,
-                &python,
-                &["-m", "pip", "check"],
-            ),
+            CheckKind::Dependencies => {
+                run_python(execution, repo, check, &python, &["-m", "pip", "check"])
+            }
             CheckKind::Placeholders => scan_placeholders(repo),
             CheckKind::Fuzz
             | CheckKind::Concurrency
@@ -213,15 +200,7 @@ fn run_coverage(execution: &dyn ExecutionAdapter, repo: &Path, python: &str) -> 
             repo,
             CheckKind::Coverage,
             python,
-            &[
-                "-m",
-                "coverage",
-                "run",
-                "-m",
-                "unittest",
-                "discover",
-                "-v",
-            ],
+            &["-m", "coverage", "run", "-m", "unittest", "discover", "-v"],
         )
     };
     if run.status != CheckStatus::Pass {
@@ -254,13 +233,22 @@ fn run_command(
     program: &str,
     values: &[&str],
 ) -> CheckResult {
-    let args = values.iter().map(|value| (*value).to_owned()).collect::<Vec<_>>();
+    let args = values
+        .iter()
+        .map(|value| (*value).to_owned())
+        .collect::<Vec<_>>();
     match execution.execute(program, &args, repo) {
         Ok(output) if output.success() => CheckResult::pass(name(check)),
         Ok(output) => CheckResult::fail(
             name(check),
             "VF_COMMAND_FAILED",
-            failure_message(program, values, output.exit_code, &output.stderr, &output.stdout),
+            failure_message(
+                program,
+                values,
+                output.exit_code,
+                &output.stderr,
+                &output.stdout,
+            ),
         ),
         Err(error) => CheckResult::fail(name(check), "VF_EXECUTION_FAILED", error),
     }
@@ -280,7 +268,10 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
             continue;
         };
         for (index, line) in content.lines().enumerate() {
-            if let Some(pattern) = patterns.iter().find(|pattern| line.contains(pattern.as_str())) {
+            if let Some(pattern) = patterns
+                .iter()
+                .find(|pattern| line.contains(pattern.as_str()))
+            {
                 findings.push(Finding {
                     code: "VF_PLACEHOLDER".into(),
                     message: format!(
@@ -313,7 +304,11 @@ fn failure_message(
     stderr: &str,
     stdout: &str,
 ) -> String {
-    let detail = if stderr.trim().is_empty() { stdout } else { stderr };
+    let detail = if stderr.trim().is_empty() {
+        stdout
+    } else {
+        stderr
+    };
     let detail = detail.trim();
     let detail = detail.chars().take(4000).collect::<String>();
     format!(
