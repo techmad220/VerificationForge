@@ -3,8 +3,10 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use verificationforge_adapter_c_family::{CAdapter, CSharpAdapter, CppAdapter};
 use verificationforge_adapter_fallback::builtin_fallback_adapters;
 use verificationforge_adapter_go::GoAdapter;
+use verificationforge_adapter_js_family::{JavaScriptAdapter, TypeScriptAdapter};
 use verificationforge_adapter_python::PythonAdapter;
 use verificationforge_adapter_rust::RustAdapter;
 use verificationforge_runtime::{
@@ -51,6 +53,11 @@ fn run() -> Result<bool, String> {
     registry.register(Arc::new(RustAdapter));
     registry.register(Arc::new(PythonAdapter));
     registry.register(Arc::new(GoAdapter));
+    registry.register(Arc::new(JavaScriptAdapter));
+    registry.register(Arc::new(TypeScriptAdapter));
+    registry.register(Arc::new(CAdapter));
+    registry.register(Arc::new(CppAdapter));
+    registry.register(Arc::new(CSharpAdapter));
     for adapter in builtin_fallback_adapters() {
         registry.register(adapter);
     }

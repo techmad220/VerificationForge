@@ -5,6 +5,8 @@ members = [
     "crates/verificationforge-adapter-rust",
     "crates/verificationforge-adapter-python",
     "crates/verificationforge-adapter-go",
+    "crates/verificationforge-adapter-js-family",
+    "crates/verificationforge-adapter-c-family",
     "crates/verificationforge-adapter-fallback",
     "apps/verificationforge-cli",
 ]

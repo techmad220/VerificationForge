@@ -3,6 +3,13 @@
 version = 4
 
 [[package]]
+name = "verificationforge-adapter-c-family"
+version = "0.1.0"
+dependencies = [
+ "verificationforge-core",
+]
+
+[[package]]
 name = "verificationforge-adapter-fallback"
 version = "0.1.0"
 dependencies = [
@@ -11,6 +18,13 @@ dependencies = [
 
 [[package]]
 name = "verificationforge-adapter-go"
+version = "0.1.0"
+dependencies = [
+ "verificationforge-core",
+]
+
+[[package]]
+name = "verificationforge-adapter-js-family"
 version = "0.1.0"
 dependencies = [
  "verificationforge-core",
@@ -34,8 +48,10 @@ dependencies = [
 name = "verificationforge-cli"
 version = "0.1.0"
 dependencies = [
+ "verificationforge-adapter-c-family",
  "verificationforge-adapter-fallback",
  "verificationforge-adapter-go",
+ "verificationforge-adapter-js-family",
  "verificationforge-adapter-python",
  "verificationforge-adapter-rust",
  "verificationforge-core",
