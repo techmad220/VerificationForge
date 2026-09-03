@@ -15,3 +15,5 @@ pub use scheduling::*;
 mod security;
 mod session;
 pub use session::*;
+mod telemetry;
+pub use telemetry::*;
