@@ -309,6 +309,54 @@ pub trait LanguageAdapter: Send + Sync {
             format!("{} adapter does not implement impact-targeted tests", self.id()),
         )
     }
+
+    fn run_integration_tests(
+        &self,
+        _repo: &Path,
+        _execution: &dyn ExecutionAdapter,
+        _scope: &ImpactScope,
+    ) -> CheckResult {
+        CheckResult::unsupported(
+            format!("{}:checkpoint-integration", self.id()),
+            format!("{} adapter does not implement affected integration tests", self.id()),
+        )
+    }
+
+    fn run_property_tests(
+        &self,
+        _repo: &Path,
+        _execution: &dyn ExecutionAdapter,
+        _scope: &ImpactScope,
+    ) -> CheckResult {
+        CheckResult::unsupported(
+            format!("{}:checkpoint-property", self.id()),
+            format!("{} adapter does not implement affected property verification", self.id()),
+        )
+    }
+
+    fn run_ui_verification(
+        &self,
+        _repo: &Path,
+        _execution: &dyn ExecutionAdapter,
+        _scope: &ImpactScope,
+    ) -> CheckResult {
+        CheckResult::unsupported(
+            format!("{}:checkpoint-ui", self.id()),
+            format!("{} adapter cannot determine or verify affected UI behavior", self.id()),
+        )
+    }
+
+    fn run_api_verification(
+        &self,
+        _repo: &Path,
+        _execution: &dyn ExecutionAdapter,
+        _scope: &ImpactScope,
+    ) -> CheckResult {
+        CheckResult::unsupported(
+            format!("{}:checkpoint-api", self.id()),
+            format!("{} adapter cannot determine or verify affected API behavior", self.id()),
+        )
+    }
 }
 
 pub trait ToolchainAdapter: Send + Sync {
