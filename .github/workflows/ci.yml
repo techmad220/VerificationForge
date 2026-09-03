@@ -105,10 +105,50 @@ jobs:
           grep -q '^VERIFICATIONFORGE_CHECK=go:lint language=Go status=PASS$' <<<"${output}"
           grep -q '^VERIFICATIONFORGE_CHECK=go:test language=Go status=PASS$' <<<"${output}"
           grep -q '^VERIFICATIONFORGE_CHECK=go:placeholders language=Go status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=native-authenticity:placeholders language=repository status=PASS$' <<<"${output}"
           test "$(grep -c '^VERIFICATIONFORGE_LANGUAGE=Go adapter=go ' <<<"${output}")" -eq 1
           grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
           grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
           test "${status}" -eq 0
+      - name: Critical fake implementation must fail
+        shell: bash
+        run: |
+          fixture="${RUNNER_TEMP}/verificationforge-fake-auth-fixture"
+          mkdir -p "${fixture}"
+          cat > "${fixture}/go.mod" <<'GO'
+          module verificationforge.example/fake-auth
+
+          go 1.22
+          GO
+          cat > "${fixture}/auth.go" <<'GO'
+          package auth
+
+          func Authorize(user string) bool {
+              return true
+          }
+          GO
+          cat > "${fixture}/auth_test.go" <<'GO'
+          package auth
+
+          import "testing"
+
+          func TestAuthorize(t *testing.T) {
+              if !Authorize("anyone") {
+                  t.Fatal("fixture expects current behavior")
+              }
+          }
+          GO
+          set +e
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "${output}"
+          test "${status}" -ne 0
+          grep -q '^VERIFICATIONFORGE_CHECK=go:build language=Go status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=go:test language=Go status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=native-authenticity:placeholders language=repository status=FAIL$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_FINDING=VF_CRITICAL_FAKE_IMPLEMENTATION blocking=true ' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=false$' <<<"${output}"
       - name: Unknown-language repositories must fail
         shell: bash
         run: |
