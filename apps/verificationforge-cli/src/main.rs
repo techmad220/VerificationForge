@@ -243,10 +243,10 @@ fn parse_args() -> Result<CliConfig, String> {
             continue;
         }
         if text == "--certification-json" {
-            certification_json = Some(PathBuf::from(
-                args.next()
-                    .ok_or_else(|| "--certification-json requires a path".to_owned())?,
-            ));
+            certification_json =
+                Some(PathBuf::from(args.next().ok_or_else(|| {
+                    "--certification-json requires a path".to_owned()
+                })?));
             continue;
         }
         if let Some(value) = text.strip_prefix("--certification-json=") {

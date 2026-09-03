@@ -178,7 +178,9 @@ impl LanguageAdapter for PopularLanguageAdapter {
             | CheckKind::Contracts
             | CheckKind::Stress
             | CheckKind::FaultInjection
-            | CheckKind::FormalProof => required_harness(self.spec, repo, execution, check.as_str()),
+            | CheckKind::FormalProof => {
+                required_harness(self.spec, repo, execution, check.as_str())
+            }
             CheckKind::Concurrency => {
                 if repository_contains(
                     self.spec,
@@ -356,7 +358,12 @@ fn validation_command(
         ),
         "fsharp" => (
             "dotnet",
-            vec!["fsi".into(), "--nologo".into(), "--exec".into(), relative.into()],
+            vec![
+                "fsi".into(),
+                "--nologo".into(),
+                "--exec".into(),
+                relative.into(),
+            ],
         ),
         "elixir" => ("elixir", vec![relative.into()]),
         "erlang" if extension == "escript" => ("escript", vec![relative.into()]),
@@ -376,11 +383,20 @@ fn validation_command(
         ),
         "d" => (
             "ldc2",
-            vec!["-c".into(), format!("-of={}", object.display()), relative.into()],
+            vec![
+                "-c".into(),
+                format!("-of={}", object.display()),
+                relative.into(),
+            ],
         ),
         "fortran" => (
             "gfortran",
-            vec!["-fsyntax-only".into(), "-Wall".into(), "-Wextra".into(), relative.into()],
+            vec![
+                "-fsyntax-only".into(),
+                "-Wall".into(),
+                "-Wextra".into(),
+                relative.into(),
+            ],
         ),
         "cobol" => (
             "cobc",
@@ -388,7 +404,12 @@ fn validation_command(
         ),
         "sql" => (
             "sqlfluff",
-            vec!["parse".into(), "--dialect".into(), "ansi".into(), relative.into()],
+            vec![
+                "parse".into(),
+                "--dialect".into(),
+                "ansi".into(),
+                relative.into(),
+            ],
         ),
         "groovy" => (
             "groovyc",
@@ -492,7 +513,11 @@ fn run_native_tests(
 
     CheckResult::pass_with_evidence(
         format!("{}:test", spec.id),
-        format!("native tests executed language={} files={}", spec.language, tests.len()),
+        format!(
+            "native tests executed language={} files={}",
+            spec.language,
+            tests.len()
+        ),
     )
 }
 
@@ -545,7 +570,11 @@ fn run_test_file(
             repo,
             "test",
             "julia",
-            &["--startup-file=no".into(), "--history-file=no".into(), relative.into()],
+            &[
+                "--startup-file=no".into(),
+                "--history-file=no".into(),
+                relative.into(),
+            ],
         ),
         "haskell" => execute(spec, execution, repo, "test", "runghc", &[relative.into()]),
         "ocaml" => execute(spec, execution, repo, "test", "ocaml", &[relative.into()]),
@@ -555,11 +584,19 @@ fn run_test_file(
             repo,
             "test",
             "dotnet",
-            &["fsi".into(), "--nologo".into(), "--exec".into(), relative.into()],
+            &[
+                "fsi".into(),
+                "--nologo".into(),
+                "--exec".into(),
+                relative.into(),
+            ],
         ),
         "elixir" => execute(spec, execution, repo, "test", "elixir", &[relative.into()]),
         "erlang" => {
-            let extension = path.extension().and_then(|value| value.to_str()).unwrap_or_default();
+            let extension = path
+                .extension()
+                .and_then(|value| value.to_str())
+                .unwrap_or_default();
             if extension.eq_ignore_ascii_case("escript") {
                 execute(spec, execution, repo, "test", "escript", &[relative.into()])
             } else {
@@ -573,7 +610,14 @@ fn run_test_file(
                 )
             }
         }
-        "zig" => execute(spec, execution, repo, "test", "zig", &["test".into(), relative.into()]),
+        "zig" => execute(
+            spec,
+            execution,
+            repo,
+            "test",
+            "zig",
+            &["test".into(), relative.into()],
+        ),
         "nim" => execute(
             spec,
             execution,
@@ -588,7 +632,14 @@ fn run_test_file(
                 relative.into(),
             ],
         ),
-        "d" => execute(spec, execution, repo, "test", "ldc2", &["-run".into(), relative.into()]),
+        "d" => execute(
+            spec,
+            execution,
+            repo,
+            "test",
+            "ldc2",
+            &["-run".into(), relative.into()],
+        ),
         "fortran" => compile_then_run(
             spec,
             repo,
@@ -695,7 +746,14 @@ fn compile_then_run(
     if compiled.status != CheckStatus::Pass {
         return compiled;
     }
-    execute(spec, execution, repo, "test", output.to_string_lossy().as_ref(), &[])
+    execute(
+        spec,
+        execution,
+        repo,
+        "test",
+        output.to_string_lossy().as_ref(),
+        &[],
+    )
 }
 
 fn run_repo_command(
@@ -706,7 +764,10 @@ fn run_repo_command(
     program: &str,
     args: &[&str],
 ) -> CheckResult {
-    let args = args.iter().map(|value| (*value).to_owned()).collect::<Vec<_>>();
+    let args = args
+        .iter()
+        .map(|value| (*value).to_owned())
+        .collect::<Vec<_>>();
     execute(spec, execution, repo, check_name, program, &args)
 }
 
@@ -866,7 +927,10 @@ fn dependency_inventory(spec: &LanguageSpec, repo: &Path) -> CheckResult {
         .count();
     CheckResult::pass_with_evidence(
         format!("{}:dependencies", spec.id),
-        format!("dependency inventory language={} manifests={manifests}", spec.language),
+        format!(
+            "dependency inventory language={} manifests={manifests}",
+            spec.language
+        ),
     )
 }
 
@@ -907,7 +971,11 @@ fn source_matches(spec: &LanguageSpec, path: &Path) -> bool {
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    if !spec.extensions.iter().any(|candidate| *candidate == extension) {
+    if !spec
+        .extensions
+        .iter()
+        .any(|candidate| *candidate == extension)
+    {
         return false;
     }
     if spec.id == "objective-c" {
@@ -1057,7 +1125,11 @@ fn expression_double_quote(value: &str) -> String {
 }
 
 fn command_detail(stdout: &str, stderr: &str) -> String {
-    let detail = if stderr.trim().is_empty() { stdout } else { stderr };
+    let detail = if stderr.trim().is_empty() {
+        stdout
+    } else {
+        stderr
+    };
     let compact = detail.split_whitespace().collect::<Vec<_>>().join(" ");
     compact.chars().take(1000).collect()
 }
@@ -1125,7 +1197,10 @@ mod tests {
     }
 
     fn spec_by_id(id: &str) -> &'static LanguageSpec {
-        SPECS.iter().find(|spec| spec.id == id).expect("spec exists")
+        SPECS
+            .iter()
+            .find(|spec| spec.id == id)
+            .expect("spec exists")
     }
 
     #[test]
@@ -1134,8 +1209,16 @@ mod tests {
         fs::create_dir_all(&root).expect("create root");
         fs::write(root.join("main.tf"), "terraform {}\n").expect("write hcl");
         fs::write(root.join("demo.groovy"), "println 'ok'\n").expect("write groovy");
-        assert!(PopularLanguageAdapter::new(spec_by_id("hcl")).detect(&root).is_some());
-        assert!(PopularLanguageAdapter::new(spec_by_id("groovy")).detect(&root).is_some());
+        assert!(
+            PopularLanguageAdapter::new(spec_by_id("hcl"))
+                .detect(&root)
+                .is_some()
+        );
+        assert!(
+            PopularLanguageAdapter::new(spec_by_id("groovy"))
+                .detect(&root)
+                .is_some()
+        );
         fs::remove_dir_all(root).ok();
     }
 
