@@ -221,6 +221,13 @@ pub struct RequirementId(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SymbolId(pub String);
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ImpactScope {
+    pub changed_paths: BTreeSet<String>,
+    pub affected_symbols: BTreeSet<SymbolId>,
+    pub requires_full_verification: bool,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct RequirementGraph {
     pub requirements: BTreeSet<RequirementId>,
@@ -266,6 +273,40 @@ pub trait LanguageAdapter: Send + Sync {
                 self.id(),
                 check.as_str()
             ),
+        )
+    }
+
+    fn run_parse_check(
+        &self,
+        _repo: &Path,
+        _execution: &dyn ExecutionAdapter,
+    ) -> CheckResult {
+        CheckResult::unsupported(
+            format!("{}:parse", self.id()),
+            format!("{} adapter does not implement patch parse verification", self.id()),
+        )
+    }
+
+    fn run_format_check(
+        &self,
+        _repo: &Path,
+        _execution: &dyn ExecutionAdapter,
+    ) -> CheckResult {
+        CheckResult::unsupported(
+            format!("{}:format", self.id()),
+            format!("{} adapter does not implement patch format verification", self.id()),
+        )
+    }
+
+    fn run_targeted_tests(
+        &self,
+        _repo: &Path,
+        _execution: &dyn ExecutionAdapter,
+        _scope: &ImpactScope,
+    ) -> CheckResult {
+        CheckResult::unsupported(
+            format!("{}:targeted-test", self.id()),
+            format!("{} adapter does not implement impact-targeted tests", self.id()),
         )
     }
 }
