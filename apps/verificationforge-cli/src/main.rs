@@ -76,7 +76,10 @@ fn run() -> Result<bool, String> {
     registry.register(Arc::new(MarkdownAdapter));
     registry.register(Arc::new(WebTemplateAdapter));
     registry.register_specialist(Arc::new(WebEcosystemSpecialist));
-    for adapter in builtin_fallback_adapters() {
+    for adapter in builtin_fallback_adapters()
+        .into_iter()
+        .filter(|adapter| adapter.id() != "html-css")
+    {
         registry.register(adapter);
     }
 
