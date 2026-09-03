@@ -68,7 +68,7 @@ jobs:
           cat > "${fixture}/go.mod" <<'GO'
           module verificationforge.example/go-fixture
 
-          go 1.25
+          go 1.22
           GO
           cat > "${fixture}/main.go" <<'GO'
           package main
