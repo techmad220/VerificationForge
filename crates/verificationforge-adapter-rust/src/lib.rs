@@ -33,11 +33,7 @@ impl LanguageAdapter for RustAdapter {
         Ok(symbols)
     }
 
-    fn run_parse_check(
-        &self,
-        repo: &Path,
-        execution: &dyn ExecutionAdapter,
-    ) -> CheckResult {
+    fn run_parse_check(&self, repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResult {
         run_named_command(
             execution,
             repo,
@@ -47,11 +43,7 @@ impl LanguageAdapter for RustAdapter {
         )
     }
 
-    fn run_format_check(
-        &self,
-        repo: &Path,
-        execution: &dyn ExecutionAdapter,
-    ) -> CheckResult {
+    fn run_format_check(&self, repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResult {
         run_named_command(
             execution,
             repo,
@@ -305,11 +297,7 @@ fn run_targeted_rust_tests(
                 );
             }
             Err(error) => {
-                return CheckResult::fail(
-                    "rust:targeted-test",
-                    "VF_EXECUTION_FAILED",
-                    error,
-                );
+                return CheckResult::fail("rust:targeted-test", "VF_EXECUTION_FAILED", error);
             }
         }
     }
