@@ -10,6 +10,7 @@ use verificationforge_adapter_js_family::{JavaScriptAdapter, TypeScriptAdapter};
 use verificationforge_adapter_jvm_family::{JavaAdapter, KotlinAdapter, ScalaAdapter};
 use verificationforge_adapter_python::PythonAdapter;
 use verificationforge_adapter_rust::RustAdapter;
+use verificationforge_adapter_script_family::{BashAdapter, PhpAdapter, PowerShellAdapter};
 use verificationforge_runtime::{
     AdapterRegistry, CheckStatus, ProcessExecutionAdapter, RepositoryConfig, RiskTier,
     VerificationEngine, VerificationLevel, VerificationSession,
@@ -62,6 +63,9 @@ fn run() -> Result<bool, String> {
     registry.register(Arc::new(JavaAdapter));
     registry.register(Arc::new(KotlinAdapter));
     registry.register(Arc::new(ScalaAdapter));
+    registry.register(Arc::new(BashAdapter));
+    registry.register(Arc::new(PowerShellAdapter));
+    registry.register(Arc::new(PhpAdapter));
     for adapter in builtin_fallback_adapters() {
         registry.register(adapter);
     }

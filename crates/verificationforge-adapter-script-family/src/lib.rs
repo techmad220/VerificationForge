@@ -281,11 +281,7 @@ fn run_parse(
     }
 }
 
-fn run_bash_parse(
-    repo: &Path,
-    execution: &dyn ExecutionAdapter,
-    check_name: &str,
-) -> CheckResult {
+fn run_bash_parse(repo: &Path, execution: &dyn ExecutionAdapter, check_name: &str) -> CheckResult {
     if !executable_available(execution, repo, "bash") {
         return tool_missing(ScriptLanguage::Bash, check_name, "bash");
     }
@@ -313,7 +309,7 @@ fn run_powershell_parse(
     }
     for path in &files {
         let relative = display_relative(repo, path);
-        let quoted = relative.replace(''', "''");
+        let quoted = relative.replace("'", "''");
         let script = format!(
             "$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile('{quoted}', [ref]$tokens, [ref]$errors) > $null; if ($errors.Count -gt 0) {{ $errors | ForEach-Object {{ Write-Error $_.Message }}; exit 1 }}"
         );
@@ -345,11 +341,7 @@ fn run_powershell_parse(
     )
 }
 
-fn run_php_parse(
-    repo: &Path,
-    execution: &dyn ExecutionAdapter,
-    check_name: &str,
-) -> CheckResult {
+fn run_php_parse(repo: &Path, execution: &dyn ExecutionAdapter, check_name: &str) -> CheckResult {
     if !executable_available(execution, repo, "php") {
         return tool_missing(ScriptLanguage::Php, check_name, "php");
     }
@@ -465,7 +457,11 @@ fn run_tests(
     }
     CheckResult::pass_with_evidence(
         format!("{}:test", language.id()),
-        format!("native {} executable tests passed files={}", language.name(), tests.len()),
+        format!(
+            "native {} executable tests passed files={}",
+            language.name(),
+            tests.len()
+        ),
     )
 }
 
@@ -542,7 +538,11 @@ fn run_dependencies(
             execution,
             "dependencies",
             "composer",
-            vec!["validate".into(), "--no-check-publish".into(), "--strict".into()],
+            vec![
+                "validate".into(),
+                "--no-check-publish".into(),
+                "--strict".into(),
+            ],
         );
     }
     let markers = match language {
@@ -578,7 +578,10 @@ fn run_security(
         }
         ScriptLanguage::PowerShell => {
             if executable_available(execution, repo, "pwsh") {
-                rename_check(run_lint(language, repo, execution), "powershell:security".into())
+                rename_check(
+                    run_lint(language, repo, execution),
+                    "powershell:security".into(),
+                )
             } else {
                 required_harness(language, repo, execution, "security")
             }
@@ -630,7 +633,9 @@ fn scan_authenticity(language: ScriptLanguage, repo: &Path) -> CheckResult {
                 || lower.contains("access");
             let constant_allow = auth_context
                 && match language {
-                    ScriptLanguage::Bash => lower.contains("return 0") || lower.contains("echo true"),
+                    ScriptLanguage::Bash => {
+                        lower.contains("return 0") || lower.contains("echo true")
+                    }
                     ScriptLanguage::PowerShell => lower.contains("return $true"),
                     ScriptLanguage::Php => lower.contains("return true"),
                 };
@@ -668,11 +673,7 @@ fn scan_authenticity(language: ScriptLanguage, repo: &Path) -> CheckResult {
     }
 }
 
-fn whitespace_format_check(
-    language: ScriptLanguage,
-    repo: &Path,
-    check_name: &str,
-) -> CheckResult {
+fn whitespace_format_check(language: ScriptLanguage, repo: &Path, check_name: &str) -> CheckResult {
     let mut checked = 0usize;
     for path in source_files(language, repo) {
         let Ok(content) = fs::read_to_string(&path) else {
@@ -807,7 +808,15 @@ fn run_surface_verification(
 }
 
 fn has_ui_surface(repo: &Path) -> bool {
-    repository_contains(repo, &["System.Windows.Forms", "PresentationFramework", "dialog", "zenity"])
+    repository_contains(
+        repo,
+        &[
+            "System.Windows.Forms",
+            "PresentationFramework",
+            "dialog",
+            "zenity",
+        ],
+    )
 }
 
 fn has_api_surface(repo: &Path) -> bool {
@@ -828,7 +837,9 @@ fn has_api_surface(repo: &Path) -> bool {
 fn has_concurrency_surface(language: ScriptLanguage, repo: &Path) -> bool {
     let markers = match language {
         ScriptLanguage::Bash => &["&", "wait ", "coproc "][..],
-        ScriptLanguage::PowerShell => &["Start-Job", "ForEach-Object -Parallel", "Start-ThreadJob"][..],
+        ScriptLanguage::PowerShell => {
+            &["Start-Job", "ForEach-Object -Parallel", "Start-ThreadJob"][..]
+        }
         ScriptLanguage::Php => &["pcntl_fork", "parallel\\", "Fiber("][..],
     };
     repository_contains(repo, markers)
@@ -841,7 +852,11 @@ fn count_markers(language: ScriptLanguage, repo: &Path, markers: &[&str]) -> usi
         .map(|content| {
             content
                 .lines()
-                .filter(|line| markers.iter().any(|marker| line.trim_start().starts_with(marker)))
+                .filter(|line| {
+                    markers
+                        .iter()
+                        .any(|marker| line.trim_start().starts_with(marker))
+                })
                 .count()
         })
         .sum()
@@ -864,7 +879,11 @@ fn repository_contains(repo: &Path, markers: &[&str]) -> bool {
 fn executable_available(execution: &dyn ExecutionAdapter, repo: &Path, program: &str) -> bool {
     let args = match program {
         "bash" => vec!["--version".into()],
-        "pwsh" => vec!["-NoProfile".into(), "-Command".into(), "$PSVersionTable.PSVersion.ToString()".into()],
+        "pwsh" => vec![
+            "-NoProfile".into(),
+            "-Command".into(),
+            "$PSVersionTable.PSVersion.ToString()".into(),
+        ],
         "php" => vec!["--version".into()],
         "shellcheck" => vec!["--version".into()],
         "composer" => vec!["--version".into()],
@@ -1075,7 +1094,10 @@ mod tests {
         fs::write(root.join("c.php"), "<?php echo 'ok';\n").expect("write php");
         assert_eq!(BashAdapter.detect(&root).expect("bash").language, "Bash");
         assert_eq!(
-            PowerShellAdapter.detect(&root).expect("powershell").language,
+            PowerShellAdapter
+                .detect(&root)
+                .expect("powershell")
+                .language,
             "PowerShell"
         );
         assert_eq!(PhpAdapter.detect(&root).expect("php").language, "PHP");
@@ -1103,7 +1125,11 @@ mod tests {
             "<?php\nfunction authorizeUser(): bool { return true; }\n",
         )
         .expect("write php");
-        let result = PhpAdapter.run_check(CheckKind::Placeholders, &root, &RecordingExecution::default());
+        let result = PhpAdapter.run_check(
+            CheckKind::Placeholders,
+            &root,
+            &RecordingExecution::default(),
+        );
         assert_eq!(result.status, CheckStatus::Fail);
         assert!(
             result
@@ -1119,11 +1145,8 @@ mod tests {
         let root = temp_dir("advanced");
         fs::create_dir_all(&root).expect("create root");
         fs::write(root.join("a.ps1"), "Write-Output 'ok'\n").expect("write ps");
-        let result = PowerShellAdapter.run_check(
-            CheckKind::Mutation,
-            &root,
-            &RecordingExecution::default(),
-        );
+        let result =
+            PowerShellAdapter.run_check(CheckKind::Mutation, &root, &RecordingExecution::default());
         assert_eq!(result.status, CheckStatus::Unsupported);
         fs::remove_dir_all(root).ok();
     }
