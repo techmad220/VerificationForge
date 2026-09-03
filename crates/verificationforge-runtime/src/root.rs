@@ -10,5 +10,6 @@ mod project;
 pub use project::*;
 mod scheduling;
 pub use scheduling::*;
+mod security;
 mod session;
 pub use session::*;
