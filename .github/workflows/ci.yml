@@ -25,6 +25,8 @@ jobs:
         run: cargo install cargo-llvm-cov --locked --version 0.9.0
       - name: Verify a real Rust Commit gate
         run: cargo test -p verificationforge-cli --test commit_gate_real_rust -- --ignored --nocapture
+      - name: Verify a real Rust Certification gate
+        run: cargo test -p verificationforge-cli --test certification_gate_real_rust -- --ignored --nocapture
       - name: Self-verify Rust patch gate
         shell: bash
         run: |
