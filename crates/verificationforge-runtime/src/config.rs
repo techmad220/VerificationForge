@@ -83,7 +83,9 @@ fn parse_risk(value: &str) -> Result<RiskTier, String> {
         "medium" => Ok(RiskTier::Medium),
         "high" => Ok(RiskTier::High),
         "critical" => Ok(RiskTier::Critical),
-        other => Err(format!("unknown risk tier in verificationforge.toml: {other}")),
+        other => Err(format!(
+            "unknown risk tier in verificationforge.toml: {other}"
+        )),
     }
 }
 
