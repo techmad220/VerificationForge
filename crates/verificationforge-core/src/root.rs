@@ -7,4 +7,3 @@ pub use firewall::*;
 mod model;
 pub use model::*;
 mod queries;
-pub use queries::*;
