@@ -1,6 +1,10 @@
 include!("lib.rs");
 
-mod scheduling;
-pub use scheduling::*;
+pub use verificationforge_core::{RiskTier, VerificationPolicy};
+
 mod certification;
 pub use certification::*;
+mod scheduling;
+pub use scheduling::*;
+mod session;
+pub use session::*;
