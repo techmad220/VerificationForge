@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+
 use verificationforge_core::{
     CheckKind, CheckResult, CheckStatus, ExecutionAdapter, Finding, LanguageAdapter,
     LanguageDetection,
@@ -82,24 +83,23 @@ impl LanguageAdapter for RustAdapter {
                 &["mutants", "--workspace", "--no-times"],
             ),
             CheckKind::Fuzz => run_fuzz(execution, repo),
-            CheckKind::Concurrency => optional_cargo_tool(
-                execution,
-                repo,
-                check,
-                "miri",
-                &["miri", "test", "--workspace"],
-            ),
-            CheckKind::Contracts
-            | CheckKind::Stress
-            | CheckKind::FaultInjection
-            | CheckKind::Ui
-            | CheckKind::FormalProof => CheckResult::unsupported(
-                name(check),
-                format!(
-                    "Rust adapter has no configured {} harness for this repository",
-                    check.as_str()
-                ),
-            ),
+            CheckKind::Concurrency => run_concurrency(execution, repo),
+            CheckKind::Contracts => run_named_harness(execution, repo, check, "vf_contracts"),
+            CheckKind::Stress => run_named_harness(execution, repo, check, "vf_stress"),
+            CheckKind::FaultInjection => {
+                run_named_harness(execution, repo, check, "vf_fault_injection")
+            }
+            CheckKind::Ui => {
+                if has_ui_assets(repo) {
+                    run_named_harness(execution, repo, check, "vf_ui")
+                } else {
+                    CheckResult::skipped(
+                        name(check),
+                        "no UI assets or common Rust web/UI framework markers were detected",
+                    )
+                }
+            }
+            CheckKind::FormalProof => run_named_harness(execution, repo, check, "vf_formal"),
         }
     }
 }
@@ -129,7 +129,10 @@ fn run_command(
         .map(|value| (*value).to_owned())
         .collect::<Vec<_>>();
     match execution.execute(program, &args, repo) {
-        Ok(output) if output.success() => CheckResult::pass(name(check)),
+        Ok(output) if output.success() => CheckResult::pass_with_evidence(
+            name(check),
+            format!("command={} {} exit=0", program, values.join(" ")),
+        ),
         Ok(output) => CheckResult::fail(
             name(check),
             "VF_COMMAND_FAILED",
@@ -166,13 +169,38 @@ fn optional_cargo_tool(
     run_cargo(execution, repo, check, run_args)
 }
 
+fn run_named_harness(
+    execution: &dyn ExecutionAdapter,
+    repo: &Path,
+    check: CheckKind,
+    harness: &str,
+) -> CheckResult {
+    let path = repo.join("tests").join(format!("{harness}.rs"));
+    if !path.is_file() {
+        return CheckResult::unsupported(
+            name(check),
+            format!(
+                "required Rust harness {} is missing; add tests/{}.rs",
+                check.as_str(),
+                harness
+            ),
+        );
+    }
+    run_cargo(
+        execution,
+        repo,
+        check,
+        &["test", "--test", harness, "--locked"],
+    )
+}
+
 fn run_fuzz(execution: &dyn ExecutionAdapter, repo: &Path) -> CheckResult {
     let list_args = vec!["fuzz".to_owned(), "list".to_owned()];
     let Ok(list) = execution.execute("cargo", &list_args, repo) else {
-        return CheckResult::unsupported(name(CheckKind::Fuzz), "cargo-fuzz is not available");
+        return fallback_fuzz_harness(execution, repo);
     };
     if !list.success() {
-        return CheckResult::unsupported(name(CheckKind::Fuzz), "cargo-fuzz is not available");
+        return fallback_fuzz_harness(execution, repo);
     }
 
     let targets = list
@@ -183,10 +211,7 @@ fn run_fuzz(execution: &dyn ExecutionAdapter, repo: &Path) -> CheckResult {
         .map(str::to_owned)
         .collect::<Vec<_>>();
     if targets.is_empty() {
-        return CheckResult::unsupported(
-            name(CheckKind::Fuzz),
-            "cargo-fuzz is installed but this repository has no fuzz targets",
-        );
+        return fallback_fuzz_harness(execution, repo);
     }
 
     for target in targets {
@@ -218,7 +243,52 @@ fn run_fuzz(execution: &dyn ExecutionAdapter, repo: &Path) -> CheckResult {
         }
     }
 
-    CheckResult::pass(name(CheckKind::Fuzz))
+    CheckResult::pass_with_evidence(
+        name(CheckKind::Fuzz),
+        "cargo fuzz completed all discovered targets with max_total_time=15",
+    )
+}
+
+fn fallback_fuzz_harness(execution: &dyn ExecutionAdapter, repo: &Path) -> CheckResult {
+    let path = repo.join("tests").join("vf_fuzz.rs");
+    if path.is_file() {
+        run_named_harness(execution, repo, CheckKind::Fuzz, "vf_fuzz")
+    } else {
+        CheckResult::unsupported(
+            name(CheckKind::Fuzz),
+            "cargo-fuzz is unavailable or has no targets and tests/vf_fuzz.rs is missing",
+        )
+    }
+}
+
+fn run_concurrency(execution: &dyn ExecutionAdapter, repo: &Path) -> CheckResult {
+    if !has_concurrency_markers(repo) {
+        return CheckResult::skipped(
+            name(CheckKind::Concurrency),
+            "no Rust concurrency or async markers were detected",
+        );
+    }
+
+    let miri = optional_cargo_tool(
+        execution,
+        repo,
+        CheckKind::Concurrency,
+        "miri",
+        &["miri", "test", "--workspace"],
+    );
+    if miri.status != CheckStatus::Unsupported {
+        return miri;
+    }
+
+    let path = repo.join("tests").join("vf_concurrency.rs");
+    if path.is_file() {
+        run_named_harness(execution, repo, CheckKind::Concurrency, "vf_concurrency")
+    } else {
+        CheckResult::unsupported(
+            name(CheckKind::Concurrency),
+            "concurrency markers detected but neither cargo miri nor tests/vf_concurrency.rs is available",
+        )
+    }
 }
 
 fn scan_placeholders(repo: &Path) -> CheckResult {
@@ -230,9 +300,10 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
         ["X", "XX:"].concat(),
     ];
     let mut findings = Vec::new();
+    let files = source_files(repo, "rs");
 
-    for path in source_files(repo, "rs") {
-        let Ok(content) = fs::read_to_string(&path) else {
+    for path in &files {
+        let Ok(content) = fs::read_to_string(path) else {
             continue;
         };
         for (index, line) in content.lines().enumerate() {
@@ -244,7 +315,7 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
                     code: "VF_PLACEHOLDER".into(),
                     message: format!(
                         "{}:{} contains placeholder marker {}",
-                        display_relative(repo, &path),
+                        display_relative(repo, path),
                         index + 1,
                         pattern
                     ),
@@ -255,7 +326,10 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
     }
 
     if findings.is_empty() {
-        CheckResult::pass(name(CheckKind::Placeholders))
+        CheckResult::pass_with_evidence(
+            name(CheckKind::Placeholders),
+            format!("scanned {} Rust source files for placeholder markers", files.len()),
+        )
     } else {
         CheckResult {
             check: name(CheckKind::Placeholders),
@@ -263,6 +337,42 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
             findings,
         }
     }
+}
+
+fn has_concurrency_markers(repo: &Path) -> bool {
+    source_files(repo, "rs").iter().any(|path| {
+        fs::read_to_string(path).is_ok_and(|content| {
+            [
+                "std::thread",
+                "tokio::",
+                "async_std::",
+                "Mutex<",
+                "RwLock<",
+                "Atomic",
+                "async fn ",
+                ".await",
+                "spawn(",
+            ]
+            .iter()
+            .any(|marker| content.contains(marker))
+        })
+    })
+}
+
+fn has_ui_assets(repo: &Path) -> bool {
+    ["html", "css", "js", "ts", "tsx", "jsx"]
+        .iter()
+        .any(|extension| contains_extension(repo, extension))
+        || ["templates", "static", "frontend", "web", "ui"]
+            .iter()
+            .any(|directory| repo.join(directory).is_dir())
+        || source_files(repo, "rs").iter().any(|path| {
+            fs::read_to_string(path).is_ok_and(|content| {
+                ["yew::", "leptos::", "dioxus::", "egui::", "iced::", "tauri::"]
+                    .iter()
+                    .any(|marker| content.contains(marker))
+            })
+        })
 }
 
 fn failure_message(
@@ -371,6 +481,26 @@ mod tests {
         .expect("write source");
         let result = scan_placeholders(&root);
         assert_eq!(result.status, CheckStatus::Fail);
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn clean_placeholder_scan_carries_evidence() {
+        let root = temp_dir();
+        fs::create_dir_all(root.join("src")).expect("create dirs");
+        fs::write(root.join("src/lib.rs"), "pub fn value() -> u8 { 1 }").expect("write source");
+        let result = scan_placeholders(&root);
+        assert_eq!(result.status, CheckStatus::Pass);
+        assert!(result.has_reproducible_evidence());
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn ui_check_is_not_applicable_for_plain_library() {
+        let root = temp_dir();
+        fs::create_dir_all(root.join("src")).expect("create dirs");
+        fs::write(root.join("src/lib.rs"), "pub fn value() -> u8 { 1 }").expect("write source");
+        assert!(!has_ui_assets(&root));
         fs::remove_dir_all(root).ok();
     }
 }
