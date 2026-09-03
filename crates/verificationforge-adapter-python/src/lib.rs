@@ -260,7 +260,15 @@ fn run_coverage(execution: &dyn ExecutionAdapter, repo: &Path, python: &str) -> 
             repo,
             CheckKind::Coverage,
             python,
-            &["-m", "coverage", "run", "-m", "unittest", "discover", "-v"],
+            &[
+                "-m",
+                "coverage",
+                "run",
+                "-m",
+                "unittest",
+                "discover",
+                "-v",
+            ],
         )
     };
     if run.status != CheckStatus::Pass {
@@ -358,13 +366,14 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
                 });
             }
         }
+        findings.extend(scan_semantic_fakes(repo, path, &content));
     }
 
     if findings.is_empty() {
         CheckResult::pass_with_evidence(
             name(CheckKind::Placeholders),
             format!(
-                "scanned {} Python source files for placeholder markers",
+                "scanned {} Python source files for placeholder and fake-success patterns",
                 files.len()
             ),
         )
@@ -374,6 +383,134 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
             status: CheckStatus::Fail,
             findings,
         }
+    }
+}
+
+fn scan_semantic_fakes(repo: &Path, path: &Path, content: &str) -> Vec<Finding> {
+    let lines = content.lines().collect::<Vec<_>>();
+    let mut findings = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        let Some(function_name) = python_function_name(trimmed) else {
+            continue;
+        };
+        let public = !function_name.starts_with('_');
+        let sensitive = sensitive_gate_name(function_name);
+        if !(public || sensitive) {
+            continue;
+        }
+        let abstract_method = previous_significant_line(&lines, index)
+            .is_some_and(|value| value.trim().contains("@abstractmethod"));
+        let indent = leading_indent(line);
+        let Some((body_index, body_line)) = first_python_body_line(&lines, index, indent) else {
+            continue;
+        };
+        let statement = body_line
+            .split('#')
+            .next()
+            .unwrap_or_default()
+            .trim();
+
+        if public && !abstract_method && matches!(statement, "pass" | "...") {
+            findings.push(fake_finding(
+                repo,
+                path,
+                body_index,
+                function_name,
+                "public function has an empty pass/ellipsis implementation",
+            ));
+        } else if sensitive && constant_python_bool(statement) {
+            findings.push(fake_finding(
+                repo,
+                path,
+                body_index,
+                function_name,
+                "authorization/permission function returns a constant boolean",
+            ));
+        }
+    }
+    findings
+}
+
+fn python_function_name(line: &str) -> Option<&str> {
+    let line = line.strip_prefix("async ").unwrap_or(line);
+    let rest = line.strip_prefix("def ")?;
+    let end = rest
+        .find(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
+        .unwrap_or(rest.len());
+    (end > 0).then_some(&rest[..end])
+}
+
+fn previous_significant_line<'a>(lines: &[&'a str], index: usize) -> Option<&'a str> {
+    lines[..index]
+        .iter()
+        .rev()
+        .copied()
+        .find(|line| !line.trim().is_empty())
+}
+
+fn first_python_body_line<'a>(
+    lines: &[&'a str],
+    index: usize,
+    function_indent: usize,
+) -> Option<(usize, &'a str)> {
+    for (body_index, line) in lines.iter().enumerate().skip(index + 1) {
+        if line.trim().is_empty() || line.trim_start().starts_with('#') {
+            continue;
+        }
+        if leading_indent(line) <= function_indent {
+            return None;
+        }
+        return Some((body_index, *line));
+    }
+    None
+}
+
+fn leading_indent(line: &str) -> usize {
+    line.chars().take_while(|character| character.is_whitespace()).count()
+}
+
+fn sensitive_gate_name(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    [
+        "authoriz",
+        "authenticate",
+        "permission",
+        "has_access",
+        "can_access",
+        "is_admin",
+        "allow_access",
+    ]
+    .iter()
+    .any(|marker| name.contains(marker))
+}
+
+fn constant_python_bool(statement: &str) -> bool {
+    let normalized = statement
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    matches!(normalized.as_str(), "returntrue" | "returnfalse")
+}
+
+fn fake_finding(
+    repo: &Path,
+    path: &Path,
+    index: usize,
+    function_name: &str,
+    reason: &str,
+) -> Finding {
+    Finding {
+        code: "VF_FAKE_IMPLEMENTATION".into(),
+        message: format!(
+            "{}:{} function {}: {}",
+            display_relative(repo, path),
+            index + 1,
+            function_name,
+            reason
+        ),
+        blocking: true,
     }
 }
 
@@ -542,6 +679,37 @@ mod tests {
             format!("def value():\n    raise {marker}\n"),
         )
         .expect("write source");
+        let result = scan_placeholders(&root);
+        assert_eq!(result.status, CheckStatus::Fail);
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn placeholder_scan_blocks_constant_authorization() {
+        let root = temp_dir();
+        fs::create_dir_all(root.join("package")).expect("create dirs");
+        fs::write(
+            root.join("package/module.py"),
+            "def authorize_user(user):\n    return True\n",
+        )
+        .expect("write source");
+        let result = scan_placeholders(&root);
+        assert_eq!(result.status, CheckStatus::Fail);
+        assert!(
+            result
+                .findings
+                .iter()
+                .any(|finding| finding.code == "VF_FAKE_IMPLEMENTATION")
+        );
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn placeholder_scan_blocks_public_pass_body() {
+        let root = temp_dir();
+        fs::create_dir_all(root.join("package")).expect("create dirs");
+        fs::write(root.join("package/module.py"), "def persist():\n    pass\n")
+            .expect("write source");
         let result = scan_placeholders(&root);
         assert_eq!(result.status, CheckStatus::Fail);
         fs::remove_dir_all(root).ok();
