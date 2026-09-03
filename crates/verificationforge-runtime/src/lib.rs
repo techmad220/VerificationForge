@@ -2,15 +2,25 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 
-use verificationforge_core::LanguageAdapter;
+use crate::security::NativeSecuritySpecialist;
+use verificationforge_core::{LanguageAdapter, SpecialistVerificationAdapter};
 pub use verificationforge_core::{
     CheckKind, CheckResult, CheckStatus, ExecutionAdapter, ExecutionResult, LanguageDetection,
     VerificationLevel,
 };
 
-#[derive(Default)]
 pub struct AdapterRegistry {
     languages: Vec<Arc<dyn LanguageAdapter>>,
+    specialists: Vec<Arc<dyn SpecialistVerificationAdapter>>,
+}
+
+impl Default for AdapterRegistry {
+    fn default() -> Self {
+        Self {
+            languages: Vec::new(),
+            specialists: vec![Arc::new(NativeSecuritySpecialist)],
+        }
+    }
 }
 
 impl AdapterRegistry {
@@ -21,6 +31,16 @@ impl AdapterRegistry {
             .any(|existing| existing.id() == adapter.id())
         {
             self.languages.push(adapter);
+        }
+    }
+
+    pub fn register_specialist(&mut self, adapter: Arc<dyn SpecialistVerificationAdapter>) {
+        if !self
+            .specialists
+            .iter()
+            .any(|existing| existing.id() == adapter.id())
+        {
+            self.specialists.push(adapter);
         }
     }
 
@@ -40,6 +60,10 @@ impl AdapterRegistry {
 
     pub fn adapter_ids(&self) -> Vec<&'static str> {
         self.languages.iter().map(|adapter| adapter.id()).collect()
+    }
+
+    pub fn specialist_ids(&self) -> Vec<&'static str> {
+        self.specialists.iter().map(|adapter| adapter.id()).collect()
     }
 
     fn adapter(&self, id: &str) -> Option<&Arc<dyn LanguageAdapter>> {
@@ -111,6 +135,7 @@ impl VerificationEngine {
         }
 
         let mut checks = Vec::new();
+        let level_checks = level.checks();
         for detection in &detections {
             let Some(adapter) = self.registry.adapter(&detection.adapter_id) else {
                 checks.push(AdapterCheckResult {
@@ -128,11 +153,30 @@ impl VerificationEngine {
                 continue;
             };
 
-            for check in level.checks() {
+            for check in &level_checks {
                 checks.push(AdapterCheckResult {
                     adapter_id: detection.adapter_id.clone(),
                     language: detection.language.clone(),
-                    result: adapter.run_check(check, repo, self.execution.as_ref()),
+                    result: adapter.run_check(*check, repo, self.execution.as_ref()),
+                });
+            }
+        }
+
+        let mut specialist_checks = level_checks;
+        if !specialist_checks.contains(&CheckKind::Security) {
+            specialist_checks.push(CheckKind::Security);
+        }
+        for check in specialist_checks {
+            for specialist in self
+                .registry
+                .specialists
+                .iter()
+                .filter(|specialist| specialist.supports(check))
+            {
+                checks.push(AdapterCheckResult {
+                    adapter_id: specialist.id().into(),
+                    language: "repository".into(),
+                    result: specialist.run_check(check, repo, self.execution.as_ref()),
                 });
             }
         }
@@ -270,6 +314,7 @@ mod tests {
             fail_test: false,
         }));
         assert_eq!(registry.adapter_ids(), vec!["demo"]);
+        assert_eq!(registry.specialist_ids(), vec!["native-security"]);
     }
 
     #[test]
@@ -289,7 +334,11 @@ mod tests {
         let report = engine.verify(Path::new("."), VerificationLevel::Patch);
         assert_eq!(report.detections.len(), 2);
         assert!(report.accepted);
-        assert_eq!(report.checks.len(), 10);
+        assert_eq!(report.checks.len(), 11);
+        assert!(report
+            .checks
+            .iter()
+            .any(|entry| entry.adapter_id == "native-security"));
     }
 
     #[test]
