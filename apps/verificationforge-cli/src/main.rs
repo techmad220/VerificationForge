@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use verificationforge_adapter_fallback::builtin_fallback_adapters;
 use verificationforge_adapter_python::PythonAdapter;
 use verificationforge_adapter_rust::RustAdapter;
 use verificationforge_runtime::{
@@ -48,6 +49,9 @@ fn run() -> Result<bool, String> {
     let mut registry = AdapterRegistry::default();
     registry.register(Arc::new(RustAdapter));
     registry.register(Arc::new(PythonAdapter));
+    for adapter in builtin_fallback_adapters() {
+        registry.register(adapter);
+    }
 
     let engine = VerificationEngine::new(registry, Arc::new(ProcessExecutionAdapter));
     let session = match &config.journal_dir {
