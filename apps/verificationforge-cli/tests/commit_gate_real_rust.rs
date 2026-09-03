@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -16,6 +17,16 @@ fn temp_dir(name: &str) -> PathBuf {
         .expect("clock before epoch")
         .as_nanos();
     std::env::temp_dir().join(format!("verificationforge-real-commit-{name}-{nonce}"))
+}
+
+fn format_fixture(root: &Path) {
+    let status = Command::new("cargo")
+        .arg("fmt")
+        .arg("--all")
+        .current_dir(root)
+        .status()
+        .expect("run cargo fmt for real Commit gate fixture");
+    assert!(status.success(), "fixture cargo fmt must succeed");
 }
 
 fn write_fixture(root: &Path, source: &str) {
@@ -56,6 +67,8 @@ fn integration_identity_and_double() {
         "cargo\nrun\n--quiet\n--bin\nfuzz_sample\n--\n{seed}\n{selections}\n{iterations}\n",
     )
     .expect("write fuzz harness");
+
+    format_fixture(root);
 }
 
 fn graph() -> UniversalCodeGraph {
@@ -299,13 +312,26 @@ fn real_rust_commit_gate_runs_tests_coverage_deterministic_mutation_fuzz_and_sec
     write_fixture(&root, BASELINE_SOURCE);
     let baseline = RepositorySnapshot::capture(&root).expect("capture baseline");
     fs::write(root.join("src/lib.rs"), CURRENT_SOURCE).expect("write commit change");
+    format_fixture(&root);
 
     let report =
         CommitGate::verify(&engine(), &root, &baseline, &graph()).expect("Commit gate should run");
 
-    assert!(report.checkpoint.patch.accepted, "PatchGate prerequisite");
-    assert!(report.checkpoint.accepted, "CheckpointGate prerequisite");
-    assert!(report.accepted, "clean Commit gate must be accepted");
+    assert!(
+        report.checkpoint.patch.accepted,
+        "PatchGate prerequisite failed: {:#?}",
+        report.checkpoint.patch.entries
+    );
+    assert!(
+        report.checkpoint.accepted,
+        "CheckpointGate prerequisite failed: {:#?}",
+        report.checkpoint.entries
+    );
+    assert!(
+        report.accepted,
+        "CommitGate rejected clean fixture: {:#?}",
+        report.entries
+    );
 
     for phase in [
         CommitGatePhase::NormalTests,
