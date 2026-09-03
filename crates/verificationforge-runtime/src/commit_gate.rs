@@ -430,19 +430,11 @@ mod tests {
             )
         }
 
-        fn run_parse_check(
-            &self,
-            _repo: &Path,
-            _execution: &dyn ExecutionAdapter,
-        ) -> CheckResult {
+        fn run_parse_check(&self, _repo: &Path, _execution: &dyn ExecutionAdapter) -> CheckResult {
             CheckResult::pass_with_evidence("demo:parse", "parse evidence")
         }
 
-        fn run_format_check(
-            &self,
-            _repo: &Path,
-            _execution: &dyn ExecutionAdapter,
-        ) -> CheckResult {
+        fn run_format_check(&self, _repo: &Path, _execution: &dyn ExecutionAdapter) -> CheckResult {
             CheckResult::pass_with_evidence("demo:format", "format evidence")
         }
 
@@ -461,10 +453,7 @@ mod tests {
             _execution: &dyn ExecutionAdapter,
             _scope: &ImpactScope,
         ) -> CheckResult {
-            CheckResult::pass_with_evidence(
-                "demo:checkpoint-integration",
-                "integration evidence",
-            )
+            CheckResult::pass_with_evidence("demo:checkpoint-integration", "integration evidence")
         }
 
         fn run_property_tests(
@@ -574,9 +563,7 @@ mod tests {
 
         let execution = Arc::new(RecordingExecution::default());
         let mut registry = AdapterRegistry::default();
-        registry.register(Arc::new(DemoAdapter {
-            property_supported,
-        }));
+        registry.register(Arc::new(DemoAdapter { property_supported }));
         let engine = VerificationEngine::new(registry, execution.clone());
         (repo, baseline, graph, engine, execution)
     }
