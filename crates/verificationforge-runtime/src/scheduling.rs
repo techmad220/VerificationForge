@@ -539,11 +539,9 @@ mod tests {
     fn snapshot_diff_and_impact_are_content_addressed() {
         let root = temp_dir("snapshot");
         fs::create_dir_all(root.join("src")).expect("create directory");
-        fs::write(root.join("src/lib.rs"), "pub fn value() -> u8 { 1 }")
-            .expect("write source");
+        fs::write(root.join("src/lib.rs"), "pub fn value() -> u8 { 1 }").expect("write source");
         let first = RepositorySnapshot::capture(&root).expect("capture first");
-        fs::write(root.join("src/lib.rs"), "pub fn value() -> u8 { 2 }")
-            .expect("update source");
+        fs::write(root.join("src/lib.rs"), "pub fn value() -> u8 { 2 }").expect("update source");
         let second = RepositorySnapshot::capture(&root).expect("capture second");
         assert_ne!(first.address, second.address);
         let diff = first.diff(&second);

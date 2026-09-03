@@ -105,11 +105,13 @@ fn push_obligations(
     kind: ObligationKind,
     statements: &[String],
 ) {
-    target.extend(statements.iter().cloned().map(|statement| VerificationObligation {
-        requirement: requirement.clone(),
-        kind,
-        statement,
-    }));
+    for statement in statements {
+        target.push(VerificationObligation {
+            requirement: requirement.clone(),
+            kind,
+            statement: statement.clone(),
+        });
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -505,10 +507,7 @@ impl VerificationPolicy {
             if !results.iter().any(|result| result.check.ends_with(&suffix)) {
                 blockers.push(Finding {
                     code: "VF_POLICY_MISSING_CHECK".into(),
-                    message: format!(
-                        "required check {} produced no evidence",
-                        required.as_str()
-                    ),
+                    message: format!("required check {} produced no evidence", required.as_str()),
                     blocking: true,
                 });
             }
