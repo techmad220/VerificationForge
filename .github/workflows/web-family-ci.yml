@@ -1,0 +1,226 @@
+name: Web Development Family CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-web-family:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Verify web runtimes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          npm --version
+          deno --version
+          bun --version
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Verify Rust workspace quality
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --workspace --all-targets --locked
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace --all-targets --locked
+
+      - name: Verify native HTML source adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="${RUNNER_TEMP}/verificationforge-html-fixture"
+          mkdir -p "${fixture}"
+          cat > "${fixture}/index.html" <<'HTML'
+          <!doctype html>
+          <html lang="en">
+          <head><meta charset="utf-8"><title>VerificationForge Web</title></head>
+          <body><main id="app"><h1>HTML verified</h1></main></body>
+          </html>
+          HTML
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=HTML adapter=html confidence=97%$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=html:build language=HTML status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=html:type-check language=HTML status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=html:lint language=HTML status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=html:placeholders language=HTML status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+
+      - name: Verify native CSS and preprocessor-family source adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="${RUNNER_TEMP}/verificationforge-css-fixture"
+          mkdir -p "${fixture}/styles"
+          cat > "${fixture}/styles/site.css" <<'CSS'
+          :root {
+            --space: 1rem;
+          }
+          body {
+            margin: 0;
+            padding: var(--space);
+          }
+          CSS
+          cat > "${fixture}/styles/theme.scss" <<'SCSS'
+          $gap: 1rem;
+          .card {
+            padding: $gap;
+          }
+          SCSS
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=CSS adapter=css confidence=96%$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=css:build language=CSS status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=css:lint language=CSS status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=css:placeholders language=CSS status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+
+      - name: Verify native Markdown source adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="${RUNNER_TEMP}/verificationforge-markdown-fixture"
+          mkdir -p "${fixture}/docs"
+          cat > "${fixture}/docs/README.md" <<'MD'
+          # VerificationForge Web
+
+          Markdown is treated as a first-class web/document source format.
+
+          ```text
+          proof=real
+          ```
+          MD
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=Markdown adapter=markdown confidence=95%$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=markdown:build language=Markdown status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=markdown:lint language=Markdown status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=markdown:placeholders language=Markdown status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+
+      - name: Verify framework SFC and package-script routing
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="${RUNNER_TEMP}/verificationforge-web-sfc-fixture"
+          mkdir -p "${fixture}/src"
+          cat > "${fixture}/src/App.vue" <<'VUE'
+          <template>
+            <main class="app">Vue SFC verified</main>
+          </template>
+          VUE
+          cat > "${fixture}/package.json" <<'JSON'
+          {
+            "name": "verificationforge-web-sfc-fixture",
+            "private": true,
+            "scripts": {
+              "build": "node -e \"console.log('build-ok')\"",
+              "typecheck": "node -e \"console.log('type-ok')\"",
+              "lint": "node -e \"console.log('lint-ok')\"",
+              "test": "node -e \"console.log('test-ok')\""
+            },
+            "dependencies": {
+              "vue": "3.5.0",
+              "vite": "7.0.0",
+              "vitest": "3.2.0"
+            }
+          }
+          JSON
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=Web Template/SFC adapter=web-template confidence=98%$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=web-template:build language=Web Template/SFC status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=web-template:type-check language=Web Template/SFC status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=web-template:lint language=Web Template/SFC status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=web-template:test language=Web Template/SFC status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=web-ecosystem:security language=repository status=PASS$' <<<"${output}"
+          grep -q 'Vue' <<<"${output}"
+          grep -q 'Vite' <<<"${output}"
+          grep -q 'Vitest' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+
+      - name: Verify complete web ecosystem inventory matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="${RUNNER_TEMP}/verificationforge-web-ecosystem-fixture"
+          mkdir -p "${fixture}"
+          cat > "${fixture}/README.md" <<'MD'
+          # Web ecosystem inventory fixture
+          MD
+          cat > "${fixture}/package.json" <<'JSON'
+          {
+            "name": "verificationforge-web-ecosystem-fixture",
+            "private": true,
+            "scripts": {"test": "node --test"},
+            "dependencies": {
+              "react": "1", "preact": "1", "vue": "1", "@angular/core": "1",
+              "svelte": "1", "solid-js": "1", "@builder.io/qwik": "1", "lit": "1",
+              "alpinejs": "1", "htmx.org": "1", "next": "1", "nuxt": "1",
+              "@sveltejs/kit": "1", "astro": "1", "@remix-run/node": "1",
+              "react-router": "1", "gatsby": "1", "@11ty/eleventy": "1",
+              "@docusaurus/core": "1", "vitepress": "1", "express": "1",
+              "fastify": "1", "@nestjs/core": "1", "koa": "1", "hono": "1",
+              "h3": "1", "socket.io": "1", "ws": "1", "vite": "1",
+              "webpack": "1", "rollup": "1", "esbuild": "1", "parcel": "1",
+              "@rspack/core": "1", "turbo": "1", "nx": "1", "vitest": "1",
+              "jest": "1", "@playwright/test": "1", "cypress": "1", "mocha": "1",
+              "ava": "1", "tailwindcss": "1", "postcss": "1", "sass": "1",
+              "less": "1", "styled-components": "1", "@emotion/react": "1"
+            }
+          }
+          JSON
+          printf '{}\n' > "${fixture}/deno.json"
+          printf '[install]\n' > "${fixture}/bunfig.toml"
+          printf 'lockfileVersion: 9\n' > "${fixture}/pnpm-lock.yaml"
+          printf '# yarn lock\n' > "${fixture}/yarn.lock"
+          printf 'lockfileVersion = 1\n' > "${fixture}/bun.lock"
+          printf '{}\n' > "${fixture}/vercel.json"
+          printf '[build]\n' > "${fixture}/netlify.toml"
+          printf 'name = "vf-web"\n' > "${fixture}/wrangler.toml"
+          printf '{}\n' > "${fixture}/firebase.json"
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=web-ecosystem:security language=repository status=PASS$' <<<"${output}"
+          for marker in \
+            'Node.js' Deno Bun npm pnpm Yarn \
+            React Preact Vue Angular Svelte SolidJS Qwik Lit Alpine.js HTMX \
+            Next.js Nuxt SvelteKit Astro Remix 'React Router' Gatsby Eleventy Docusaurus VitePress \
+            Express Fastify NestJS Koa Hono h3 Socket.IO ws \
+            Vite webpack Rollup esbuild Parcel Rspack Turborepo Nx \
+            Vitest Jest Playwright Cypress Mocha AVA 'Node test runner' \
+            'Tailwind CSS' PostCSS Sass Less styled-components Emotion \
+            Vercel Netlify 'Cloudflare Workers/Pages' Firebase; do
+            grep -Fq "${marker}" <<<"${output}" || { echo "missing ecosystem marker: ${marker}"; exit 1; }
+          done
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"

@@ -66,6 +66,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "verificationforge-adapter-web-family"
+version = "0.1.0"
+dependencies = [
+ "verificationforge-core",
+]
+
+[[package]]
 name = "verificationforge-cli"
 version = "0.1.0"
 dependencies = [
@@ -78,6 +85,7 @@ dependencies = [
  "verificationforge-adapter-python",
  "verificationforge-adapter-rust",
  "verificationforge-adapter-script-family",
+ "verificationforge-adapter-web-family",
  "verificationforge-core",
  "verificationforge-runtime",
 ]
