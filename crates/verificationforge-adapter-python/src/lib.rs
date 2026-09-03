@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use verificationforge_core::{
     CheckKind, CheckResult, CheckStatus, ExecutionAdapter, Finding, LanguageAdapter,
-    LanguageDetection,
+    LanguageDetection, run_repository_harness,
 };
 
 pub struct PythonAdapter;
@@ -52,7 +52,12 @@ impl LanguageAdapter for PythonAdapter {
                 } else if executable_available(execution, repo, "pyright") {
                     run_command(execution, repo, check, "pyright", &["."])
                 } else {
-                    CheckResult::unsupported(name(check), "neither mypy nor pyright is available")
+                    optional_repository_harness(
+                        execution,
+                        repo,
+                        check,
+                        "neither mypy nor pyright is available",
+                    )
                 }
             }
             CheckKind::Lint => {
@@ -67,7 +72,7 @@ impl LanguageAdapter for PythonAdapter {
                 } else if executable_available(execution, repo, "ruff") {
                     run_command(execution, repo, check, "ruff", &["check", "."])
                 } else {
-                    CheckResult::unsupported(name(check), "ruff is not available")
+                    optional_repository_harness(execution, repo, check, "ruff is not available")
                 }
             }
             CheckKind::Test => run_tests(execution, repo, &python),
@@ -76,7 +81,7 @@ impl LanguageAdapter for PythonAdapter {
                 if module_available(execution, repo, &python, "mutmut") {
                     run_python(execution, repo, check, &python, &["-m", "mutmut", "run"])
                 } else {
-                    CheckResult::unsupported(name(check), "mutmut is not available")
+                    optional_repository_harness(execution, repo, check, "mutmut is not available")
                 }
             }
             CheckKind::Security => {
@@ -89,33 +94,21 @@ impl LanguageAdapter for PythonAdapter {
                         &["-m", "bandit", "-r", ".", "-q"],
                     )
                 } else {
-                    CheckResult::unsupported(name(check), "bandit is not available")
+                    optional_repository_harness(execution, repo, check, "bandit is not available")
                 }
             }
             CheckKind::Dependencies => {
                 run_python(execution, repo, check, &python, &["-m", "pip", "check"])
             }
             CheckKind::Placeholders => scan_placeholders(repo),
-            CheckKind::Fuzz => {
-                run_named_harness(execution, repo, &python, check, "test_fuzz.py")
-            }
-            CheckKind::Concurrency => run_concurrency(execution, repo, &python),
-            CheckKind::Contracts => {
-                run_named_harness(execution, repo, &python, check, "test_contracts.py")
-            }
-            CheckKind::Stress => {
-                run_named_harness(execution, repo, &python, check, "test_stress.py")
-            }
-            CheckKind::FaultInjection => run_named_harness(
-                execution,
-                repo,
-                &python,
-                check,
-                "test_fault_injection.py",
-            ),
+            CheckKind::Fuzz => required_repository_harness(execution, repo, check),
+            CheckKind::Concurrency => run_concurrency(execution, repo),
+            CheckKind::Contracts => required_repository_harness(execution, repo, check),
+            CheckKind::Stress => required_repository_harness(execution, repo, check),
+            CheckKind::FaultInjection => required_repository_harness(execution, repo, check),
             CheckKind::Ui => {
                 if has_ui_assets(repo) {
-                    run_named_harness(execution, repo, &python, check, "test_ui.py")
+                    required_repository_harness(execution, repo, check)
                 } else {
                     CheckResult::skipped(
                         name(check),
@@ -123,15 +116,55 @@ impl LanguageAdapter for PythonAdapter {
                     )
                 }
             }
-            CheckKind::FormalProof => {
-                run_named_harness(execution, repo, &python, check, "test_formal.py")
-            }
+            CheckKind::FormalProof => required_repository_harness(execution, repo, check),
         }
     }
 }
 
 fn name(check: CheckKind) -> String {
     format!("python:{}", check.as_str())
+}
+
+fn repository_harness(
+    execution: &dyn ExecutionAdapter,
+    repo: &Path,
+    check: CheckKind,
+) -> Option<CheckResult> {
+    run_repository_harness(repo, execution, name(check), check.as_str())
+}
+
+fn required_repository_harness(
+    execution: &dyn ExecutionAdapter,
+    repo: &Path,
+    check: CheckKind,
+) -> CheckResult {
+    repository_harness(execution, repo, check).unwrap_or_else(|| {
+        CheckResult::unsupported(
+            name(check),
+            format!(
+                "required repository harness is missing: .verificationforge/{}.argv",
+                check.as_str()
+            ),
+        )
+    })
+}
+
+fn optional_repository_harness(
+    execution: &dyn ExecutionAdapter,
+    repo: &Path,
+    check: CheckKind,
+    native_message: &str,
+) -> CheckResult {
+    repository_harness(execution, repo, check).unwrap_or_else(|| {
+        CheckResult::unsupported(
+            name(check),
+            format!(
+                "{} and .verificationforge/{}.argv is missing",
+                native_message,
+                check.as_str()
+            ),
+        )
+    })
 }
 
 fn python_program(execution: &dyn ExecutionAdapter, repo: &Path) -> Option<String> {
@@ -169,8 +202,10 @@ fn module_available(
 
 fn run_tests(execution: &dyn ExecutionAdapter, repo: &Path, python: &str) -> CheckResult {
     if !has_test_files(repo) {
-        return CheckResult::unsupported(
-            name(CheckKind::Test),
+        return optional_repository_harness(
+            execution,
+            repo,
+            CheckKind::Test,
             "no Python test_*.py or *_test.py files were found",
         );
     }
@@ -195,11 +230,18 @@ fn run_tests(execution: &dyn ExecutionAdapter, repo: &Path, python: &str) -> Che
 
 fn run_coverage(execution: &dyn ExecutionAdapter, repo: &Path, python: &str) -> CheckResult {
     if !module_available(execution, repo, python, "coverage") {
-        return CheckResult::unsupported(name(CheckKind::Coverage), "coverage.py is not available");
+        return optional_repository_harness(
+            execution,
+            repo,
+            CheckKind::Coverage,
+            "coverage.py is not available",
+        );
     }
     if !has_test_files(repo) {
-        return CheckResult::unsupported(
-            name(CheckKind::Coverage),
+        return optional_repository_harness(
+            execution,
+            repo,
+            CheckKind::Coverage,
             "coverage cannot run because no Python tests were found",
         );
     }
@@ -218,15 +260,7 @@ fn run_coverage(execution: &dyn ExecutionAdapter, repo: &Path, python: &str) -> 
             repo,
             CheckKind::Coverage,
             python,
-            &[
-                "-m",
-                "coverage",
-                "run",
-                "-m",
-                "unittest",
-                "discover",
-                "-v",
-            ],
+            &["-m", "coverage", "run", "-m", "unittest", "discover", "-v"],
         )
     };
     if run.status != CheckStatus::Pass {
@@ -242,74 +276,14 @@ fn run_coverage(execution: &dyn ExecutionAdapter, repo: &Path, python: &str) -> 
     )
 }
 
-fn run_named_harness(
-    execution: &dyn ExecutionAdapter,
-    repo: &Path,
-    python: &str,
-    check: CheckKind,
-    file_name: &str,
-) -> CheckResult {
-    let harness_dir = repo.join("tests").join("verificationforge");
-    let path = harness_dir.join(file_name);
-    if !path.is_file() {
-        return CheckResult::unsupported(
-            name(check),
-            format!(
-                "required Python harness {} is missing; add tests/verificationforge/{}",
-                check.as_str(),
-                file_name
-            ),
-        );
-    }
-
-    if module_available(execution, repo, python, "pytest") {
-        let path_string = display_relative(repo, &path);
-        run_python(
-            execution,
-            repo,
-            check,
-            python,
-            &["-m", "pytest", "-q", &path_string],
-        )
-    } else {
-        run_python(
-            execution,
-            repo,
-            check,
-            python,
-            &[
-                "-m",
-                "unittest",
-                "discover",
-                "-s",
-                "tests/verificationforge",
-                "-p",
-                file_name,
-                "-v",
-            ],
-        )
-    }
-}
-
-fn run_concurrency(
-    execution: &dyn ExecutionAdapter,
-    repo: &Path,
-    python: &str,
-) -> CheckResult {
+fn run_concurrency(execution: &dyn ExecutionAdapter, repo: &Path) -> CheckResult {
     if !has_concurrency_markers(repo) {
         return CheckResult::skipped(
             name(CheckKind::Concurrency),
             "no Python threading, multiprocessing or async markers were detected",
         );
     }
-
-    run_named_harness(
-        execution,
-        repo,
-        python,
-        CheckKind::Concurrency,
-        "test_concurrency.py",
-    )
+    required_repository_harness(execution, repo, CheckKind::Concurrency)
 }
 
 fn run_python(
@@ -516,13 +490,7 @@ fn visit(path: &Path, extension: &str, depth: usize, files: &mut Vec<PathBuf>) {
             let name = name.to_string_lossy();
             if matches!(
                 name.as_ref(),
-                ".git"
-                    | "target"
-                    | "vendor"
-                    | "node_modules"
-                    | ".venv"
-                    | "venv"
-                    | "__pycache__"
+                ".git" | "target" | "vendor" | "node_modules" | ".venv" | "venv" | "__pycache__"
             ) {
                 continue;
             }
