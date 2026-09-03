@@ -1,8 +1,6 @@
 use std::path::Path;
 
-use crate::{
-    CheckKind, CheckResult, ExecutionAdapter, ObligationKind, RequirementSpec,
-};
+use crate::{CheckKind, CheckResult, ExecutionAdapter, ObligationKind, RequirementSpec};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SpecialistDomain {
@@ -150,10 +148,7 @@ mod tests {
         fn review_requirement(&self, specification: &RequirementSpec) -> Vec<AdversarialChallenge> {
             vec![AdversarialChallenge::new(
                 ObligationKind::ErrorBehavior,
-                format!(
-                    "force an invalid input path for {}",
-                    specification.title
-                ),
+                format!("force an invalid input path for {}", specification.title),
                 "reviewers add proof obligations instead of granting success",
             )]
         }
