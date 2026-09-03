@@ -753,7 +753,7 @@ mod tests {
             &self,
             _repo: &Path,
             _execution: &dyn ExecutionAdapter,
-            _scope: &ImpactScope,
+            _scope: &verificationforge_core::ImpactScope,
         ) -> CheckResult {
             CheckResult::pass_with_evidence("demo:targeted-test", "targeted evidence")
         }
@@ -885,9 +885,7 @@ mod tests {
             "certification-reproducibility",
         ] {
             let content = if let Some(phase) = name.strip_prefix("commit-") {
-                format!(
-                    "cert-tool\n{phase}\n{{seed}}\n{{selections}}\n{{iterations}}\n"
-                )
+                format!("cert-tool\n{phase}\n{{seed}}\n{{selections}}\n{{iterations}}\n")
             } else {
                 let phase = name.trim_start_matches("certification-");
                 format!("cert-tool\n{phase}\n{{seed}}\n{{iterations}}\n")
