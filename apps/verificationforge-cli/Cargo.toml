@@ -1,0 +1,11 @@
+[package]
+name = "verificationforge-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+verificationforge-runtime = { path = "../../crates/verificationforge-runtime" }
+verificationforge-adapter-rust = { path = "../../crates/verificationforge-adapter-rust" }
+verificationforge-adapter-python = { path = "../../crates/verificationforge-adapter-python" }

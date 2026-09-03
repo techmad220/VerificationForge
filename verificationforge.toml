@@ -1,0 +1,16 @@
+[project]
+name = "VerificationForge"
+risk = "high"
+
+[verification]
+patch = true
+checkpoint = true
+commit = true
+certification = true
+
+[policy]
+block_placeholders = true
+block_fake_success = true
+block_critical_security = true
+block_dead_ui = true
+block_meaningful_mutation_survivors = true
