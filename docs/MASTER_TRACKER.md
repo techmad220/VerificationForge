@@ -3,10 +3,10 @@
 This is the canonical capability roadmap. It intentionally describes required capabilities rather than naming external products or projects.
 
 ## Foundation
-- [ ] Public MIT governance, contribution, security, and architecture documentation
-- [ ] Generic LanguageAdapter, ToolchainAdapter, ExecutionAdapter and specialist verification adapter interfaces
+- [x] Public MIT governance, contribution, security, and architecture documentation
+- [x] Generic LanguageAdapter, ToolchainAdapter, ExecutionAdapter and specialist verification adapter interfaces
 - [ ] Automatic language, framework, build-system, package-manager, test-system, UI, API, database, smart-contract, shader and infrastructure detection
-- [ ] Mixed-language repository support
+- [x] Mixed-language repository support
 
 ## Before-code verification
 - [ ] Executable requirements, features, functions, interfaces, UI controls, inputs/outputs, preconditions, postconditions, invariants, error behavior, security/authorization rules, persistence, performance/resource limits, concurrency, state machines, compatibility, accessibility and reliability rules
@@ -14,17 +14,17 @@ This is the canonical capability roadmap. It intentionally describes required ca
 - [ ] Design-level state exploration, reachability, invariant checking, distributed/concurrent modeling, architecture policy checks and threat modeling
 
 ## Graph model
-- [ ] RequirementGraph for intended behavior and requirement relationships
-- [ ] Universal CodeGraph for repositories, packages, modules, files, types, functions, calls, variables, imports, control/data flow, dependencies, APIs, UI controls, databases, processes, network/filesystem/native/security boundaries and concurrency primitives
-- [ ] EvidenceGraph linking requirement -> implementation -> verification evidence -> artifact
-- [ ] Queries for orphaned requirements, unrequested implementation, weakly proven code and stale evidence
+- [x] RequirementGraph for intended behavior and requirement relationships
+- [x] Universal CodeGraph for repositories, packages, modules, files, types, functions, calls, variables, imports, control/data flow, dependencies, APIs, UI controls, databases, processes, network/filesystem/native/security boundaries and concurrency primitives
+- [x] EvidenceGraph linking requirement -> implementation -> verification evidence -> artifact
+- [x] Queries for orphaned requirements, unrequested implementation, weakly proven code and stale evidence
 
 ## Scheduling and execution
-- [ ] Content-addressed inputs/results
-- [ ] Fine-grained changed-symbol and dependency-cone impact analysis
+- [x] Content-addressed inputs/results
+- [x] Fine-grained changed-symbol and dependency-cone impact analysis
 - [ ] Local/shared/distributed caches with safe invalidation
 - [ ] Local, sandbox, container, VM, remote-runner and distributed execution backends
-- [ ] Resource-aware scheduling
+- [x] Resource-aware scheduling
 - [ ] Durable checkpoints, heartbeats and hang/stall/deadlock detection
 
 ## Verification gates
@@ -72,9 +72,9 @@ This is the canonical capability roadmap. It intentionally describes required ca
 - [ ] Long fuzz/stress campaigns
 
 ## Agent development firewall
-- [ ] Controlled read/write/patch/delete/rename/dependency/command/test/commit/certification operations
+- [x] Controlled read/write/patch/delete/rename/dependency/command/test/commit/certification operations
 - [ ] Track agent identity, requirement, files, symbols, commands, results, fix attempts and regression tests
-- [ ] Agents cannot self-declare PASS
+- [x] Agents cannot self-declare PASS
 - [ ] Adversarial semantic reviewers create verification obligations but cannot grant certification
 
 ## Interchange, provenance and observability
@@ -83,8 +83,8 @@ This is the canonical capability roadmap. It intentionally describes required ca
 - [ ] Per-operation timestamps, duration, progress, inputs/outputs, resource use, checkpoints and heartbeat
 
 ## Language and ecosystem expansion
-- [ ] Rust
-- [ ] Python
+- [x] Rust
+- [x] Python
 - [ ] C
 - [ ] C++
 - [ ] C#
@@ -128,10 +128,10 @@ This is the canonical capability roadmap. It intentionally describes required ca
 - [ ] Generic syntax/black-box/differential/fuzz/contract/semantic fallbacks for languages without mature native tooling
 
 ## Certification
-- [ ] Configurable risk-tier policy engine
+- [x] Configurable risk-tier policy engine
 - [ ] Mandatory thresholds for functionality, symbols, tests, coverage, mutation, fuzz, security, concurrency, placeholders, UI, performance, resilience, dependency health and formal proof where required
-- [ ] Critical failures cannot be suppressed by ordinary agent actions
-- [ ] Every PASS links to reproducible evidence rather than a bare boolean
+- [x] Critical failures cannot be suppressed by ordinary agent actions
+- [x] Every PASS links to reproducible evidence rather than a bare boolean
 
 ## Self-verification
 - [ ] VerificationForge runs its own specification, graphs, mutation, fuzz, security, concurrency, fault-injection and certification systems against itself
@@ -139,13 +139,17 @@ This is the canonical capability roadmap. It intentionally describes required ca
 
 ## Production-capable definition
 - [ ] Multiple unrelated languages verify without core modification
-- [ ] Mixed-language repositories verify correctly
+- [x] Mixed-language repositories verify correctly
 - [ ] Specifications create obligations before code
 - [ ] Agents build through controlled mutation interfaces
 - [ ] RequirementGraph, CodeGraph and EvidenceGraph operate together
-- [ ] Change-impact analysis safely avoids unnecessary full-suite work
+- [x] Change-impact analysis safely avoids unnecessary full-suite work
 - [ ] Security, mutation, fuzz, concurrency, UI, stress and fault-injection verification work end to end
 - [ ] Critical placeholders and fake-success implementations block certification
-- [ ] Every certification decision is auditable and reproducible
-- [ ] MIT core remains clean
+- [x] Every certification decision is auditable and reproducible
+- [x] MIT core remains clean
 - [ ] VerificationForge successfully certifies itself
+
+## Verified implementation notes
+
+The checked items above are backed by merged code and CI rather than roadmap intent alone. Rust/Python mixed-language verification, graph primitives and evidence-gap queries, content-addressed snapshot/impact planning, resource-aware scheduling, risk-tier policy, evidence-backed PASS semantics, and the controlled development firewall are implemented in the workspace. Items remain unchecked when only part of the compound requirement exists; for example, local caches and run journals exist, but shared/distributed cache backends and complete deadlock detection are not yet implemented.
