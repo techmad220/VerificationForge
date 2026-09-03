@@ -7,6 +7,12 @@ pub use agent::*;
 mod authenticity;
 mod certification;
 pub use certification::*;
+mod certification_gate;
+pub use certification_gate::{
+    CertificationGateEntry, CertificationGatePhase, CertificationGateReport, CertificationWorkPlan,
+};
+mod certification_gate_hardened;
+pub use certification_gate_hardened::CertificationGate;
 mod checkpoint_gate;
 pub use checkpoint_gate::*;
 mod commit_gate;
