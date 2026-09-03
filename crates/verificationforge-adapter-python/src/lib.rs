@@ -260,15 +260,7 @@ fn run_coverage(execution: &dyn ExecutionAdapter, repo: &Path, python: &str) -> 
             repo,
             CheckKind::Coverage,
             python,
-            &[
-                "-m",
-                "coverage",
-                "run",
-                "-m",
-                "unittest",
-                "discover",
-                "-v",
-            ],
+            &["-m", "coverage", "run", "-m", "unittest", "discover", "-v"],
         )
     };
     if run.status != CheckStatus::Pass {
@@ -405,11 +397,7 @@ fn scan_semantic_fakes(repo: &Path, path: &Path, content: &str) -> Vec<Finding> 
         let Some((body_index, body_line)) = first_python_body_line(&lines, index, indent) else {
             continue;
         };
-        let statement = body_line
-            .split('#')
-            .next()
-            .unwrap_or_default()
-            .trim();
+        let statement = body_line.split('#').next().unwrap_or_default().trim();
 
         if public && !abstract_method && matches!(statement, "pass" | "...") {
             findings.push(fake_finding(
@@ -467,7 +455,9 @@ fn first_python_body_line<'a>(
 }
 
 fn leading_indent(line: &str) -> usize {
-    line.chars().take_while(|character| character.is_whitespace()).count()
+    line.chars()
+        .take_while(|character| character.is_whitespace())
+        .count()
 }
 
 fn sensitive_gate_name(name: &str) -> bool {
