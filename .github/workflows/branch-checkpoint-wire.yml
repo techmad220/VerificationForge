@@ -1,0 +1,80 @@
+name: Branch Checkpoint Rust wiring
+
+on:
+  push:
+    branches:
+      - agent/complete-checkpoint-gate
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/complete-checkpoint-gate
+      - name: Wire Rust Checkpoint module
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('crates/verificationforge-adapter-rust/src/lib.rs')
+          text = path.read_text()
+          if 'mod checkpoint;' in text:
+              raise SystemExit('checkpoint module is already wired')
+          marker = 'pub struct RustAdapter;'
+          if text.count(marker) != 1:
+              raise SystemExit('RustAdapter marker mismatch')
+          text = text.replace(marker, 'mod checkpoint;\n\npub struct RustAdapter;', 1)
+
+          start = text.index('    fn run_targeted_tests(')
+          insertion = text.index('    fn run_check(', start)
+          hooks = ''.join([
+              '    fn run_integration_tests(\n',
+              '        &self,\n',
+              '        repo: &Path,\n',
+              '        execution: &dyn ExecutionAdapter,\n',
+              '        scope: &ImpactScope,\n',
+              '    ) -> CheckResult {\n',
+              '        checkpoint::run_integration_tests(execution, repo, scope)\n',
+              '    }\n\n',
+              '    fn run_property_tests(\n',
+              '        &self,\n',
+              '        repo: &Path,\n',
+              '        execution: &dyn ExecutionAdapter,\n',
+              '        scope: &ImpactScope,\n',
+              '    ) -> CheckResult {\n',
+              '        checkpoint::run_property_tests(execution, repo, scope)\n',
+              '    }\n\n',
+              '    fn run_ui_verification(\n',
+              '        &self,\n',
+              '        repo: &Path,\n',
+              '        execution: &dyn ExecutionAdapter,\n',
+              '        scope: &ImpactScope,\n',
+              '    ) -> CheckResult {\n',
+              '        checkpoint::run_ui_verification(execution, repo, scope)\n',
+              '    }\n\n',
+              '    fn run_api_verification(\n',
+              '        &self,\n',
+              '        repo: &Path,\n',
+              '        execution: &dyn ExecutionAdapter,\n',
+              '        scope: &ImpactScope,\n',
+              '    ) -> CheckResult {\n',
+              '        checkpoint::run_api_verification(execution, repo, scope)\n',
+              '    }\n\n',
+          ])
+          text = text[:insertion] + hooks + text[insertion:]
+          path.write_text(text)
+          PY
+      - name: Commit Rust wiring
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/verificationforge-adapter-rust/src/lib.rs
+          git commit -m "Wire native Rust Checkpoint verification hooks"
+          git push origin HEAD:agent/complete-checkpoint-gate
