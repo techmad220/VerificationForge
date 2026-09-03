@@ -57,20 +57,11 @@ impl LanguageAdapter for RustAdapter {
                 check,
                 &["test", "--workspace", "--all-targets", "--locked"],
             ),
-            CheckKind::Dependencies => run_cargo(
-                execution,
-                repo,
-                check,
-                &["tree", "--workspace", "--locked"],
-            ),
+            CheckKind::Dependencies => {
+                run_cargo(execution, repo, check, &["tree", "--workspace", "--locked"])
+            }
             CheckKind::Placeholders => scan_placeholders(repo),
-            CheckKind::Security => optional_cargo_tool(
-                execution,
-                repo,
-                check,
-                "audit",
-                &["audit"],
-            ),
+            CheckKind::Security => optional_cargo_tool(execution, repo, check, "audit", &["audit"]),
             CheckKind::Coverage => optional_cargo_tool(
                 execution,
                 repo,
@@ -133,13 +124,22 @@ fn run_command(
     program: &str,
     values: &[&str],
 ) -> CheckResult {
-    let args = values.iter().map(|value| (*value).to_owned()).collect::<Vec<_>>();
+    let args = values
+        .iter()
+        .map(|value| (*value).to_owned())
+        .collect::<Vec<_>>();
     match execution.execute(program, &args, repo) {
         Ok(output) if output.success() => CheckResult::pass(name(check)),
         Ok(output) => CheckResult::fail(
             name(check),
             "VF_COMMAND_FAILED",
-            failure_message(program, values, output.exit_code, &output.stderr, &output.stdout),
+            failure_message(
+                program,
+                values,
+                output.exit_code,
+                &output.stderr,
+                &output.stdout,
+            ),
         ),
         Err(error) => CheckResult::fail(name(check), "VF_EXECUTION_FAILED", error),
     }
@@ -213,11 +213,7 @@ fn run_fuzz(execution: &dyn ExecutionAdapter, repo: &Path) -> CheckResult {
                 );
             }
             Err(error) => {
-                return CheckResult::fail(
-                    name(CheckKind::Fuzz),
-                    "VF_EXECUTION_FAILED",
-                    error,
-                );
+                return CheckResult::fail(name(CheckKind::Fuzz), "VF_EXECUTION_FAILED", error);
             }
         }
     }
@@ -240,7 +236,10 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
             continue;
         };
         for (index, line) in content.lines().enumerate() {
-            if let Some(pattern) = patterns.iter().find(|pattern| line.contains(pattern.as_str())) {
+            if let Some(pattern) = patterns
+                .iter()
+                .find(|pattern| line.contains(pattern.as_str()))
+            {
                 findings.push(Finding {
                     code: "VF_PLACEHOLDER".into(),
                     message: format!(
@@ -273,13 +272,13 @@ fn failure_message(
     stderr: &str,
     stdout: &str,
 ) -> String {
-    let detail = if stderr.trim().is_empty() { stdout } else { stderr };
-    let detail = detail.trim();
-    let detail = if detail.len() > 4000 {
-        &detail[..4000]
+    let detail = if stderr.trim().is_empty() {
+        stdout
     } else {
-        detail
+        stderr
     };
+    let detail = detail.trim();
+    let detail = detail.chars().take(4000).collect::<String>();
     format!(
         "{} {} exited with code {}{}{}",
         program,
@@ -365,8 +364,11 @@ mod tests {
         let root = temp_dir();
         fs::create_dir_all(root.join("src")).expect("create dirs");
         let marker = ["to", "do!();"].concat();
-        fs::write(root.join("src/lib.rs"), format!("pub fn value() {{ {marker} }}"))
-            .expect("write source");
+        fs::write(
+            root.join("src/lib.rs"),
+            format!("pub fn value() {{ {marker} }}"),
+        )
+        .expect("write source");
         let result = scan_placeholders(&root);
         assert_eq!(result.status, CheckStatus::Fail);
         fs::remove_dir_all(root).ok();
