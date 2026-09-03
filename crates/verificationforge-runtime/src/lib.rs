@@ -2,6 +2,7 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 
+use crate::authenticity::NativeAuthenticitySpecialist;
 use crate::security::NativeSecuritySpecialist;
 use verificationforge_core::{LanguageAdapter, SpecialistVerificationAdapter};
 pub use verificationforge_core::{
@@ -18,7 +19,10 @@ impl Default for AdapterRegistry {
     fn default() -> Self {
         Self {
             languages: Vec::new(),
-            specialists: vec![Arc::new(NativeSecuritySpecialist)],
+            specialists: vec![
+                Arc::new(NativeSecuritySpecialist),
+                Arc::new(NativeAuthenticitySpecialist),
+            ],
         }
     }
 }
@@ -314,7 +318,10 @@ mod tests {
             fail_test: false,
         }));
         assert_eq!(registry.adapter_ids(), vec!["demo"]);
-        assert_eq!(registry.specialist_ids(), vec!["native-security"]);
+        assert_eq!(
+            registry.specialist_ids(),
+            vec!["native-security", "native-authenticity"]
+        );
     }
 
     #[test]
@@ -334,11 +341,15 @@ mod tests {
         let report = engine.verify(Path::new("."), VerificationLevel::Patch);
         assert_eq!(report.detections.len(), 2);
         assert!(report.accepted);
-        assert_eq!(report.checks.len(), 11);
+        assert_eq!(report.checks.len(), 12);
         assert!(report
             .checks
             .iter()
             .any(|entry| entry.adapter_id == "native-security"));
+        assert!(report
+            .checks
+            .iter()
+            .any(|entry| entry.adapter_id == "native-authenticity"));
     }
 
     #[test]
