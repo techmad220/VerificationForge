@@ -97,7 +97,10 @@ impl DevelopmentFirewallPolicy {
         }
 
         if self.require_evidence_for_commit
-            && matches!(request.kind, AgentOperationKind::Commit | AgentOperationKind::Certification)
+            && matches!(
+                request.kind,
+                AgentOperationKind::Commit | AgentOperationKind::Certification
+            )
             && request.evidence_ids.is_empty()
         {
             block(
@@ -122,7 +125,11 @@ impl DevelopmentFirewallPolicy {
         }
 
         if self.block_unresolved_findings {
-            for finding in request.active_findings.iter().filter(|finding| finding.blocking) {
+            for finding in request
+                .active_findings
+                .iter()
+                .filter(|finding| finding.blocking)
+            {
                 decision.allowed = false;
                 decision.blockers.push(Finding {
                     code: "VF_FIREWALL_ACTIVE_BLOCKER".into(),
@@ -195,10 +202,12 @@ mod tests {
         );
         let decision = DevelopmentFirewallPolicy::default().evaluate(&request);
         assert!(!decision.allowed);
-        assert!(decision
-            .blockers
-            .iter()
-            .any(|finding| finding.code == "VF_FIREWALL_REQUIREMENT_REQUIRED"));
+        assert!(
+            decision
+                .blockers
+                .iter()
+                .any(|finding| finding.code == "VF_FIREWALL_REQUIREMENT_REQUIRED")
+        );
     }
 
     #[test]
@@ -213,9 +222,12 @@ mod tests {
         request.evidence_ids.push("evidence-1".into());
         let decision = DevelopmentFirewallPolicy::default().evaluate(&request);
         assert!(!decision.allowed);
-        assert!(decision.blockers.iter().any(|finding| {
-            finding.code == "VF_FIREWALL_ENGINE_CERTIFICATION_REQUIRED"
-        }));
+        assert!(
+            decision
+                .blockers
+                .iter()
+                .any(|finding| { finding.code == "VF_FIREWALL_ENGINE_CERTIFICATION_REQUIRED" })
+        );
 
         request.engine_certification_id = Some("vf-cert-1".into());
         let decision = DevelopmentFirewallPolicy::default().evaluate(&request);
@@ -239,9 +251,11 @@ mod tests {
         });
         let decision = DevelopmentFirewallPolicy::default().evaluate(&request);
         assert!(!decision.allowed);
-        assert!(decision
-            .blockers
-            .iter()
-            .any(|finding| finding.code == "VF_FIREWALL_ACTIVE_BLOCKER"));
+        assert!(
+            decision
+                .blockers
+                .iter()
+                .any(|finding| finding.code == "VF_FIREWALL_ACTIVE_BLOCKER")
+        );
     }
 }
