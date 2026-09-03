@@ -2,9 +2,7 @@ use std::path::Path;
 
 use verificationforge_core::{CheckResult, CheckStatus, Finding, UniversalCodeGraph};
 
-use crate::{
-    certification_gate as legacy, ContentAddress, RepositorySnapshot, VerificationEngine,
-};
+use crate::{ContentAddress, RepositorySnapshot, VerificationEngine, certification_gate as legacy};
 
 pub struct CertificationGate;
 
@@ -100,26 +98,18 @@ fn validate_declared_workload(
                 ));
             }
         }
-        legacy::CertificationGatePhase::ExtendedFuzz => require_at_least(
-            result,
-            "VF_CERT_FUZZ_ITERATIONS",
-            plan.iterations,
-        )?,
-        legacy::CertificationGatePhase::Concurrency => require_at_least(
-            result,
-            "VF_CERT_CONCURRENCY_CASES",
-            plan.iterations,
-        )?,
-        legacy::CertificationGatePhase::Stress => require_at_least(
-            result,
-            "VF_CERT_STRESS_ITERATIONS",
-            plan.iterations,
-        )?,
-        legacy::CertificationGatePhase::FaultInjection => require_at_least(
-            result,
-            "VF_CERT_FAULT_CASES",
-            plan.iterations,
-        )?,
+        legacy::CertificationGatePhase::ExtendedFuzz => {
+            require_at_least(result, "VF_CERT_FUZZ_ITERATIONS", plan.iterations)?
+        }
+        legacy::CertificationGatePhase::Concurrency => {
+            require_at_least(result, "VF_CERT_CONCURRENCY_CASES", plan.iterations)?
+        }
+        legacy::CertificationGatePhase::Stress => {
+            require_at_least(result, "VF_CERT_STRESS_ITERATIONS", plan.iterations)?
+        }
+        legacy::CertificationGatePhase::FaultInjection => {
+            require_at_least(result, "VF_CERT_FAULT_CASES", plan.iterations)?
+        }
         legacy::CertificationGatePhase::ResourceLeaks => {
             require_at_least(result, "VF_CERT_RESOURCE_SAMPLES", plan.iterations)?;
             require_exact(result, "VF_CERT_RESOURCE_LEAKS", 0)?;
@@ -170,14 +160,14 @@ fn required_metric(result: &CheckResult, key: &str) -> Result<usize, String> {
 
 fn metric_value(result: &CheckResult, key: &str) -> Option<usize> {
     result.findings.iter().find_map(|finding| {
-        finding.message.split(|character: char| {
-            character.is_ascii_whitespace() || character == ';'
-        })
-        .find_map(|token| {
-            let token = token.strip_prefix("metrics=").unwrap_or(token);
-            let value = token.strip_prefix(key)?.strip_prefix('=')?;
-            value.parse::<usize>().ok()
-        })
+        finding
+            .message
+            .split(|character: char| character.is_ascii_whitespace() || character == ';')
+            .find_map(|token| {
+                let token = token.strip_prefix("metrics=").unwrap_or(token);
+                let value = token.strip_prefix(key)?.strip_prefix('=')?;
+                value.parse::<usize>().ok()
+            })
     })
 }
 
@@ -213,10 +203,19 @@ mod tests {
     #[test]
     fn declared_iteration_phases_cannot_underreport_work() {
         let cases = [
-            (CertificationGatePhase::ExtendedFuzz, "VF_CERT_FUZZ_ITERATIONS"),
-            (CertificationGatePhase::Concurrency, "VF_CERT_CONCURRENCY_CASES"),
+            (
+                CertificationGatePhase::ExtendedFuzz,
+                "VF_CERT_FUZZ_ITERATIONS",
+            ),
+            (
+                CertificationGatePhase::Concurrency,
+                "VF_CERT_CONCURRENCY_CASES",
+            ),
             (CertificationGatePhase::Stress, "VF_CERT_STRESS_ITERATIONS"),
-            (CertificationGatePhase::FaultInjection, "VF_CERT_FAULT_CASES"),
+            (
+                CertificationGatePhase::FaultInjection,
+                "VF_CERT_FAULT_CASES",
+            ),
         ];
         for (phase, key) in cases {
             let result = CheckResult::pass_with_evidence(
