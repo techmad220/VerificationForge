@@ -109,11 +109,7 @@ mod tests {
 
     #[test]
     fn specialist_contract_can_contribute_evidence() {
-        let result = DemoSpecialist.run_check(
-            CheckKind::Security,
-            Path::new("."),
-            &FakeExecution,
-        );
+        let result = DemoSpecialist.run_check(CheckKind::Security, Path::new("."), &FakeExecution);
         assert_eq!(result.status, CheckStatus::Pass);
         assert!(result.has_reproducible_evidence());
         assert_eq!(DemoSpecialist.domains(), &[SpecialistDomain::Security]);
