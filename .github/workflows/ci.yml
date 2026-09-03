@@ -60,6 +60,53 @@ jobs:
           grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
           grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
           test "${status}" -eq 0
+      - name: Verify a real Go fixture through generic fallback
+        shell: bash
+        run: |
+          fixture="${RUNNER_TEMP}/verificationforge-go-fixture"
+          mkdir -p "${fixture}/.verificationforge"
+          cat > "${fixture}/go.mod" <<'GO'
+          module verificationforge.example/go-fixture
+
+          go 1.25
+          GO
+          cat > "${fixture}/main.go" <<'GO'
+          package main
+
+          import "fmt"
+
+          func add(left, right int) int {
+              return left + right
+          }
+
+          func main() {
+              fmt.Println(add(2, 3))
+          }
+          GO
+          cat > "${fixture}/main_test.go" <<'GO'
+          package main
+
+          import "testing"
+
+          func TestAdd(t *testing.T) {
+              if got := add(2, 3); got != 5 {
+                  t.Fatalf("add(2, 3) = %d, want 5", got)
+              }
+          }
+          GO
+          printf '%s\n' go build ./... > "${fixture}/.verificationforge/go-build.argv"
+          printf '%s\n' go test -run '^$' ./... > "${fixture}/.verificationforge/go-type-check.argv"
+          printf '%s\n' go vet ./... > "${fixture}/.verificationforge/go-lint.argv"
+          printf '%s\n' go test ./... > "${fixture}/.verificationforge/go-test.argv"
+          set +e
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=Go adapter=go ' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+          test "${status}" -eq 0
       - name: Unknown-language repositories must fail
         shell: bash
         run: |
