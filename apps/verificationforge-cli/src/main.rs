@@ -84,9 +84,7 @@ fn parse_args() -> Result<(PathBuf, VerificationLevel), String> {
             let value = args
                 .next()
                 .ok_or_else(|| "--level requires a value".to_owned())?;
-            level = value
-                .to_string_lossy()
-                .parse::<VerificationLevel>()?;
+            level = value.to_string_lossy().parse::<VerificationLevel>()?;
             continue;
         }
         if let Some(value) = text.strip_prefix("--level=") {
