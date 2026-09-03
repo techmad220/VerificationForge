@@ -38,6 +38,7 @@ dependencies = [
  "verificationforge-adapter-go",
  "verificationforge-adapter-python",
  "verificationforge-adapter-rust",
+ "verificationforge-core",
  "verificationforge-runtime",
 ]
 

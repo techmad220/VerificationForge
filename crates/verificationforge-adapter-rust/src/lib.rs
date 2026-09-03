@@ -1,9 +1,10 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use verificationforge_core::{
-    CheckKind, CheckResult, CheckStatus, ExecutionAdapter, Finding, LanguageAdapter,
-    LanguageDetection, run_repository_harness,
+    CheckKind, CheckResult, CheckStatus, ExecutionAdapter, Finding, ImpactScope, LanguageAdapter,
+    LanguageDetection, SymbolId, run_repository_harness,
 };
 
 pub struct RustAdapter;
@@ -20,6 +21,45 @@ impl LanguageAdapter for RustAdapter {
             language: "Rust".into(),
             confidence_percent: if manifest { 100 } else { 80 },
         })
+    }
+
+    fn inventory_symbols(&self, repo: &Path) -> Result<Vec<SymbolId>, String> {
+        let mut symbols = source_files(repo, "rs")
+            .into_iter()
+            .map(|path| SymbolId(format!("rust:file:{}", display_relative(repo, &path))))
+            .collect::<Vec<_>>();
+        symbols.sort();
+        symbols.dedup();
+        Ok(symbols)
+    }
+
+    fn run_parse_check(&self, repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResult {
+        run_named_command(
+            execution,
+            repo,
+            "rust:parse",
+            "cargo",
+            &["check", "--workspace", "--all-targets", "--locked"],
+        )
+    }
+
+    fn run_format_check(&self, repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResult {
+        run_named_command(
+            execution,
+            repo,
+            "rust:format",
+            "cargo",
+            &["fmt", "--all", "--", "--check"],
+        )
+    }
+
+    fn run_targeted_tests(
+        &self,
+        repo: &Path,
+        execution: &dyn ExecutionAdapter,
+        scope: &ImpactScope,
+    ) -> CheckResult {
+        run_targeted_rust_tests(execution, repo, scope)
     }
 
     fn run_check(
@@ -139,10 +179,10 @@ fn run_cargo(
     run_command(execution, repo, check, "cargo", values)
 }
 
-fn run_command(
+fn run_named_command(
     execution: &dyn ExecutionAdapter,
     repo: &Path,
-    check: CheckKind,
+    check_name: &str,
     program: &str,
     values: &[&str],
 ) -> CheckResult {
@@ -152,11 +192,11 @@ fn run_command(
         .collect::<Vec<_>>();
     match execution.execute(program, &args, repo) {
         Ok(output) if output.success() => CheckResult::pass_with_evidence(
-            name(check),
+            check_name,
             format!("command={} {} exit=0", program, values.join(" ")),
         ),
         Ok(output) => CheckResult::fail(
-            name(check),
+            check_name,
             "VF_COMMAND_FAILED",
             failure_message(
                 program,
@@ -166,8 +206,159 @@ fn run_command(
                 &output.stdout,
             ),
         ),
-        Err(error) => CheckResult::fail(name(check), "VF_EXECUTION_FAILED", error),
+        Err(error) => CheckResult::fail(check_name, "VF_EXECUTION_FAILED", error),
     }
+}
+
+fn run_command(
+    execution: &dyn ExecutionAdapter,
+    repo: &Path,
+    check: CheckKind,
+    program: &str,
+    values: &[&str],
+) -> CheckResult {
+    run_named_command(execution, repo, &name(check), program, values)
+}
+
+fn run_targeted_rust_tests(
+    execution: &dyn ExecutionAdapter,
+    repo: &Path,
+    scope: &ImpactScope,
+) -> CheckResult {
+    if scope.changed_paths.is_empty() {
+        return CheckResult::skipped(
+            "rust:targeted-test",
+            "no Rust paths changed relative to the patch baseline",
+        );
+    }
+    if scope.requires_full_verification {
+        return run_named_command(
+            execution,
+            repo,
+            "rust:targeted-test",
+            "cargo",
+            &["test", "--workspace", "--all-targets", "--locked"],
+        );
+    }
+
+    let mut target_paths = scope.changed_paths.clone();
+    for symbol in &scope.affected_symbols {
+        if let Some(path) = symbol.0.strip_prefix("rust:file:") {
+            target_paths.insert(path.to_owned());
+        }
+    }
+
+    let mut packages = BTreeSet::new();
+    for path in &target_paths {
+        let Some(package) = rust_package_for_path(repo, path) else {
+            return run_named_command(
+                execution,
+                repo,
+                "rust:targeted-test",
+                "cargo",
+                &["test", "--workspace", "--all-targets", "--locked"],
+            );
+        };
+        packages.insert(package);
+    }
+    if packages.is_empty() {
+        return run_named_command(
+            execution,
+            repo,
+            "rust:targeted-test",
+            "cargo",
+            &["test", "--workspace", "--all-targets", "--locked"],
+        );
+    }
+
+    for package in &packages {
+        let args = vec![
+            "test".to_owned(),
+            "--package".to_owned(),
+            package.clone(),
+            "--all-targets".to_owned(),
+            "--locked".to_owned(),
+        ];
+        match execution.execute("cargo", &args, repo) {
+            Ok(output) if output.success() => {}
+            Ok(output) => {
+                return CheckResult::fail(
+                    "rust:targeted-test",
+                    "VF_TARGETED_TEST_FAILED",
+                    format!(
+                        "cargo test --package {package} --all-targets --locked exited with code {}: {}",
+                        output.exit_code,
+                        if output.stderr.trim().is_empty() {
+                            output.stdout.trim()
+                        } else {
+                            output.stderr.trim()
+                        }
+                    ),
+                );
+            }
+            Err(error) => {
+                return CheckResult::fail("rust:targeted-test", "VF_EXECUTION_FAILED", error);
+            }
+        }
+    }
+
+    CheckResult::pass_with_evidence(
+        "rust:targeted-test",
+        format!(
+            "impact-targeted cargo tests passed packages={}",
+            packages.into_iter().collect::<Vec<_>>().join(",")
+        ),
+    )
+}
+
+fn rust_package_for_path(repo: &Path, relative: &str) -> Option<String> {
+    let absolute = repo.join(relative);
+    let mut directory = if absolute.is_dir() {
+        absolute
+    } else {
+        absolute.parent()?.to_path_buf()
+    };
+    loop {
+        let manifest = directory.join("Cargo.toml");
+        if manifest.is_file()
+            && let Ok(content) = fs::read_to_string(&manifest)
+            && let Some(name) = cargo_package_name(&content)
+        {
+            return Some(name);
+        }
+        if directory == repo {
+            break;
+        }
+        let parent = directory.parent()?;
+        if !parent.starts_with(repo) {
+            break;
+        }
+        directory = parent.to_path_buf();
+    }
+    None
+}
+
+fn cargo_package_name(content: &str) -> Option<String> {
+    let mut in_package = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_package = trimmed == "[package]";
+            continue;
+        }
+        if !in_package {
+            continue;
+        }
+        let Some(value) = trimmed.strip_prefix("name") else {
+            continue;
+        };
+        let value = value.trim_start();
+        let value = value.strip_prefix('=')?.trim();
+        let value = value.strip_prefix('"')?;
+        let end = value.find('"')?;
+        return Some(value[..end].to_owned());
+    }
+    None
 }
 
 fn optional_cargo_tool(
@@ -589,7 +780,37 @@ fn display_relative(repo: &Path, path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use verificationforge_core::ExecutionResult;
+
+    #[derive(Default)]
+    struct RecordingExecution {
+        calls: Mutex<Vec<(String, Vec<String>)>>,
+    }
+
+    impl ExecutionAdapter for RecordingExecution {
+        fn id(&self) -> &'static str {
+            "recording"
+        }
+
+        fn execute(
+            &self,
+            program: &str,
+            args: &[String],
+            _cwd: &Path,
+        ) -> Result<ExecutionResult, String> {
+            self.calls
+                .lock()
+                .expect("calls lock poisoned")
+                .push((program.into(), args.to_vec()));
+            Ok(ExecutionResult {
+                exit_code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+            })
+        }
+    }
 
     fn temp_dir() -> PathBuf {
         let nonce = SystemTime::now()
@@ -606,6 +827,95 @@ mod tests {
         fs::write(root.join("src/nested/lib.rs"), "pub fn value() -> u8 { 1 }")
             .expect("write source");
         assert!(RustAdapter.detect(&root).is_some());
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn inventories_rust_files_for_impact_mapping() {
+        let root = temp_dir();
+        fs::create_dir_all(root.join("src")).expect("create dirs");
+        fs::write(root.join("src/lib.rs"), "pub fn value() -> u8 { 1 }").expect("write source");
+        let symbols = RustAdapter.inventory_symbols(&root).expect("inventory");
+        assert_eq!(symbols, vec![SymbolId("rust:file:src/lib.rs".into())]);
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn patch_parse_and_format_use_native_cargo_commands() {
+        let root = temp_dir();
+        fs::create_dir_all(&root).expect("create root");
+        let execution = RecordingExecution::default();
+        let parse = RustAdapter.run_parse_check(&root, &execution);
+        let format = RustAdapter.run_format_check(&root, &execution);
+        assert_eq!(parse.status, CheckStatus::Pass);
+        assert_eq!(format.status, CheckStatus::Pass);
+        assert!(parse.has_reproducible_evidence());
+        assert!(format.has_reproducible_evidence());
+        let calls = execution.calls.lock().expect("calls lock poisoned");
+        assert_eq!(
+            calls[0],
+            (
+                "cargo".into(),
+                vec![
+                    "check".into(),
+                    "--workspace".into(),
+                    "--all-targets".into(),
+                    "--locked".into()
+                ]
+            )
+        );
+        assert_eq!(
+            calls[1],
+            (
+                "cargo".into(),
+                vec!["fmt".into(), "--all".into(), "--".into(), "--check".into()]
+            )
+        );
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn targeted_patch_tests_select_affected_rust_package() {
+        let root = temp_dir();
+        fs::create_dir_all(root.join("crates/demo/src")).expect("create dirs");
+        fs::write(
+            root.join("crates/demo/Cargo.toml"),
+            "[package]\nname = \"demo-package\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+        )
+        .expect("write manifest");
+        fs::write(
+            root.join("crates/demo/src/lib.rs"),
+            "pub fn value() -> u8 { 1 }\n",
+        )
+        .expect("write source");
+        let execution = RecordingExecution::default();
+        let scope = ImpactScope {
+            changed_paths: ["crates/demo/src/lib.rs".into()].into_iter().collect(),
+            affected_symbols: [SymbolId("rust:file:crates/demo/src/lib.rs".into())]
+                .into_iter()
+                .collect(),
+            requires_full_verification: false,
+        };
+        let result = RustAdapter.run_targeted_tests(&root, &execution, &scope);
+        assert_eq!(result.status, CheckStatus::Pass);
+        assert!(result.has_reproducible_evidence());
+        assert_eq!(
+            execution
+                .calls
+                .lock()
+                .expect("calls lock poisoned")
+                .as_slice(),
+            &[(
+                "cargo".into(),
+                vec![
+                    "test".into(),
+                    "--package".into(),
+                    "demo-package".into(),
+                    "--all-targets".into(),
+                    "--locked".into()
+                ]
+            )]
+        );
         fs::remove_dir_all(root).ok();
     }
 

@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+verificationforge-core = { path = "../../crates/verificationforge-core" }
 verificationforge-runtime = { path = "../../crates/verificationforge-runtime" }
 verificationforge-adapter-rust = { path = "../../crates/verificationforge-adapter-rust" }
 verificationforge-adapter-python = { path = "../../crates/verificationforge-adapter-python" }

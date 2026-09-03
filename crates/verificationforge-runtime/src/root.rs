@@ -13,6 +13,8 @@ mod development;
 pub use development::*;
 mod liveness;
 pub use liveness::*;
+mod patch_gate;
+pub use patch_gate::*;
 mod project;
 pub use project::*;
 mod provenance;
