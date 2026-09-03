@@ -73,9 +73,9 @@ This is the canonical capability roadmap. It intentionally describes required ca
 
 ## Agent development firewall
 - [x] Controlled read/write/patch/delete/rename/dependency/command/test/commit/certification operations
-- [ ] Track agent identity, requirement, files, symbols, commands, results, fix attempts and regression tests
+- [x] Track agent identity, requirement, files, symbols, commands, results, fix attempts and regression tests
 - [x] Agents cannot self-declare PASS
-- [ ] Adversarial semantic reviewers create verification obligations but cannot grant certification
+- [x] Adversarial semantic reviewers create verification obligations but cannot grant certification
 
 ## Interchange, provenance and observability
 - [ ] Standard machine-readable import/export for findings, tests, coverage, component/dependency inventories, vulnerabilities, provenance, API/event/RPC contracts, traces, metrics and logs
@@ -152,4 +152,4 @@ This is the canonical capability roadmap. It intentionally describes required ca
 
 ## Verified implementation notes
 
-The checked items above are backed by merged code and CI rather than roadmap intent alone. Rust/Python mixed-language verification, specification-to-obligation generation, graph primitives and evidence-gap queries, content-addressed snapshot/impact planning, resource-aware scheduling, risk-tier policy, evidence-backed PASS semantics, and the controlled development firewall are implemented in the workspace. A real Go repository also verifies through the generic fallback adapter and per-language argv harness without core-engine modification, while missing harnesses fail closed. Items remain unchecked when only part of the compound requirement exists; for example, fallback profiles are not claimed as native first-class language adapters, local caches and run journals exist but shared/distributed cache backends and complete deadlock detection are not yet implemented.
+The checked items above are backed by merged code and CI rather than roadmap intent alone. Rust/Python mixed-language verification, specification-to-obligation generation, graph primitives and evidence-gap queries, content-addressed snapshot/impact planning, resource-aware scheduling, risk-tier policy, evidence-backed PASS semantics, and the controlled development firewall are implemented in the workspace. Controlled-operation provenance telemetry records agent identity, requirement scope, files, symbols, exact commands, outcomes, evidence, fix attempts, regression tests and timing without exposing a mutable bypass around the firewall. A separate adversarial-review contract can create additional verification obligations but intentionally has no PASS, acceptance or certification capability. A real Go repository also verifies through the generic fallback adapter and per-language argv harness without core-engine modification, while missing harnesses fail closed. Items remain unchecked when only part of the compound requirement exists; for example, fallback profiles are not claimed as native first-class language adapters, operation telemetry is currently in-memory rather than a complete durable provenance chain, and local caches/run journals exist but shared/distributed cache backends and complete deadlock detection are not yet implemented.
