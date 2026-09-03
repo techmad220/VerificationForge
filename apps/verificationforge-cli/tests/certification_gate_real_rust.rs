@@ -38,7 +38,11 @@ fn generate_lockfile(root: &Path) {
 
 fn init_git(root: &Path) {
     run(root, "git", &["init", "-q"]);
-    run(root, "git", &["config", "user.name", "VerificationForge CI"]);
+    run(
+        root,
+        "git",
+        &["config", "user.name", "VerificationForge CI"],
+    );
     run(
         root,
         "git",
@@ -114,7 +118,14 @@ fn integration_core_behavior() {
 }
 
 fn write_argv(root: &Path, name: &str, trailing: &[&str]) {
-    let mut lines = vec!["cargo", "run", "--quiet", "--bin", "certification_harness", "--"];
+    let mut lines = vec![
+        "cargo",
+        "run",
+        "--quiet",
+        "--bin",
+        "certification_harness",
+        "--",
+    ];
     lines.extend_from_slice(trailing);
     fs::write(
         root.join(format!(".verificationforge/{name}.argv")),
@@ -716,7 +727,10 @@ fn real_rust_certification_rejects_removed_historical_secret() {
     let report = CertificationGate::verify(&engine(), &root, &baseline, &graph())
         .expect("Certification gate should run");
     assert!(report.commit.accepted, "CommitGate prerequisite failed");
-    assert!(!report.accepted, "historical secret must block certification");
+    assert!(
+        !report.accepted,
+        "historical secret must block certification"
+    );
     assert!(report.entries.iter().any(|entry| {
         entry.phase == CertificationGatePhase::HistorySecurity
             && entry.result.status == CheckStatus::Fail
