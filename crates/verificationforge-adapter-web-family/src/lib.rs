@@ -51,8 +51,18 @@ const WEB_TEMPLATE: SourceProfile = SourceProfile {
     id: "web-template",
     language: "Web Template/SFC",
     extensions: &[
-        "vue", "svelte", "astro", "mdx", "ejs", "hbs", "handlebars", "pug", "njk",
-        "nunjucks", "liquid", "mustache",
+        "vue",
+        "svelte",
+        "astro",
+        "mdx",
+        "ejs",
+        "hbs",
+        "handlebars",
+        "pug",
+        "njk",
+        "nunjucks",
+        "liquid",
+        "mustache",
     ],
     kind: SourceKind::Template,
 };
@@ -109,7 +119,13 @@ macro_rules! impl_source_adapter {
                 execution: &dyn ExecutionAdapter,
                 _scope: &ImpactScope,
             ) -> CheckResult {
-                run_named_test_script($profile, repo, execution, "checkpoint-integration", &["test:integration", "integration"])
+                run_named_test_script(
+                    $profile,
+                    repo,
+                    execution,
+                    "checkpoint-integration",
+                    &["test:integration", "integration"],
+                )
             }
 
             fn run_property_tests(
@@ -118,7 +134,13 @@ macro_rules! impl_source_adapter {
                 execution: &dyn ExecutionAdapter,
                 _scope: &ImpactScope,
             ) -> CheckResult {
-                run_named_test_script($profile, repo, execution, "checkpoint-property", &["test:property", "property"])
+                run_named_test_script(
+                    $profile,
+                    repo,
+                    execution,
+                    "checkpoint-property",
+                    &["test:property", "property"],
+                )
             }
 
             fn run_ui_verification(
@@ -212,7 +234,10 @@ impl SpecialistVerificationAdapter for WebEcosystemSpecialist {
                 } else {
                     CheckResult::skipped(
                         "web-ecosystem:contracts",
-                        format!("no web API/server contract surface detected; {}", inventory.summary()),
+                        format!(
+                            "no web API/server contract surface detected; {}",
+                            inventory.summary()
+                        ),
                     )
                 }
             }
@@ -310,11 +335,7 @@ fn inventory_symbols(profile: SourceProfile, repo: &Path) -> Result<Vec<SymbolId
     Ok(symbols)
 }
 
-fn run_parse(
-    profile: SourceProfile,
-    repo: &Path,
-    execution: &dyn ExecutionAdapter,
-) -> CheckResult {
+fn run_parse(profile: SourceProfile, repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResult {
     if profile.kind == SourceKind::Template {
         for script in ["check", "typecheck"] {
             if package_has_script(repo, script) {
@@ -341,7 +362,10 @@ fn run_source_check(
             if profile.kind == SourceKind::Template && package_has_script(repo, "build") {
                 run_package_script(profile, repo, execution, "build", "build")
             } else {
-                rename_check(run_parse(profile, repo, execution), format!("{}:build", profile.id))
+                rename_check(
+                    run_parse(profile, repo, execution),
+                    format!("{}:build", profile.id),
+                )
             }
         }
         CheckKind::TypeCheck => {
@@ -364,7 +388,10 @@ fn run_source_check(
         CheckKind::Placeholders => placeholder_scan(profile, repo),
         CheckKind::Concurrency => CheckResult::skipped(
             format!("{}:concurrency", profile.id),
-            format!("{} source has no native shared-memory concurrency model", profile.language),
+            format!(
+                "{} source has no native shared-memory concurrency model",
+                profile.language
+            ),
         ),
         CheckKind::Ui => run_ui_surface(profile, repo, execution, "ui"),
         CheckKind::Contracts => run_contract_surface(profile, repo, execution, "contracts"),
@@ -373,15 +400,13 @@ fn run_source_check(
         | CheckKind::Fuzz
         | CheckKind::Stress
         | CheckKind::FaultInjection
-        | CheckKind::FormalProof => required_source_harness(profile, repo, execution, check.as_str()),
+        | CheckKind::FormalProof => {
+            required_source_harness(profile, repo, execution, check.as_str())
+        }
     }
 }
 
-fn run_lint(
-    profile: SourceProfile,
-    repo: &Path,
-    execution: &dyn ExecutionAdapter,
-) -> CheckResult {
+fn run_lint(profile: SourceProfile, repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResult {
     if profile.kind == SourceKind::Template && package_has_script(repo, "lint") {
         return run_package_script(profile, repo, execution, "lint", "lint");
     }
@@ -427,7 +452,10 @@ fn run_format(profile: SourceProfile, repo: &Path) -> CheckResult {
         if !content.is_empty() && !content.ends_with('\n') {
             findings.push(Finding {
                 code: "VF_WEB_FORMAT_FINAL_NEWLINE".into(),
-                message: format!("{} is missing a final newline", display_relative(repo, &path)),
+                message: format!(
+                    "{} is missing a final newline",
+                    display_relative(repo, &path)
+                ),
                 blocking: true,
             });
         }
@@ -461,7 +489,14 @@ fn run_targeted_tests(
         profile.extensions.contains(&extension.as_str())
             || matches!(
                 Path::new(path).file_name().and_then(|value| value.to_str()),
-                Some("package.json" | "package-lock.json" | "pnpm-lock.yaml" | "yarn.lock" | "bun.lock" | "deno.json")
+                Some(
+                    "package.json"
+                        | "package-lock.json"
+                        | "pnpm-lock.yaml"
+                        | "yarn.lock"
+                        | "bun.lock"
+                        | "deno.json"
+                )
             )
     });
     if !affected && !scope.requires_full_verification {
@@ -476,17 +511,16 @@ fn run_targeted_tests(
     )
 }
 
-fn run_tests(
-    profile: SourceProfile,
-    repo: &Path,
-    execution: &dyn ExecutionAdapter,
-) -> CheckResult {
+fn run_tests(profile: SourceProfile, repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResult {
     if package_has_script(repo, "test") {
         run_package_script(profile, repo, execution, "test", "test")
     } else {
         CheckResult::skipped(
             format!("{}:test", profile.id),
-            format!("{} repository declares no native test script", profile.language),
+            format!(
+                "{} repository declares no native test script",
+                profile.language
+            ),
         )
     }
 }
@@ -505,7 +539,10 @@ fn run_named_test_script(
     }
     CheckResult::skipped(
         format!("{}:{check_name}", profile.id),
-        format!("no {check_name} package script detected for {}", profile.language),
+        format!(
+            "no {check_name} package script detected for {}",
+            profile.language
+        ),
     )
 }
 
@@ -518,7 +555,10 @@ fn run_ui_surface(
     if !matches!(profile.kind, SourceKind::Html | SourceKind::Template) {
         return CheckResult::skipped(
             format!("{}:{check_name}", profile.id),
-            format!("{} does not directly define interactive controls", profile.language),
+            format!(
+                "{} does not directly define interactive controls",
+                profile.language
+            ),
         );
     }
     let controls = interactive_control_count(profile, repo);
@@ -537,7 +577,11 @@ fn run_contract_surface(
     execution: &dyn ExecutionAdapter,
     check_name: &str,
 ) -> CheckResult {
-    if !repository_contains_source(profile, repo, &["<form", "fetch(", "axios.", "action=", "method="]) {
+    if !repository_contains_source(
+        profile,
+        repo,
+        &["<form", "fetch(", "axios.", "action=", "method="],
+    ) {
         return CheckResult::skipped(
             format!("{}:{check_name}", profile.id),
             "no web contract/API surface detected in this source family",
@@ -685,7 +729,10 @@ fn validate_markdown(profile: SourceProfile, repo: &Path) -> CheckResult {
             return CheckResult::fail(
                 "markdown:parse",
                 "VF_MARKDOWN_FENCE_UNCLOSED",
-                format!("{} has an unclosed fenced code block", display_relative(repo, &path)),
+                format!(
+                    "{} has an unclosed fenced code block",
+                    display_relative(repo, &path)
+                ),
             );
         }
     }
@@ -713,7 +760,10 @@ fn validate_templates(profile: SourceProfile, repo: &Path) -> CheckResult {
             return CheckResult::fail(
                 "web-template:parse",
                 "VF_WEB_TEMPLATE_BRACES_UNBALANCED",
-                format!("{} has unbalanced template braces", display_relative(repo, &path)),
+                format!(
+                    "{} has unbalanced template braces",
+                    display_relative(repo, &path)
+                ),
             );
         }
     }
@@ -829,7 +879,10 @@ fn placeholder_scan(profile: SourceProfile, repo: &Path) -> CheckResult {
     if findings.is_empty() {
         CheckResult::pass_with_evidence(
             format!("{}:placeholders", profile.id),
-            format!("scanned {scanned} {} source files for unfinished markers", profile.language),
+            format!(
+                "scanned {scanned} {} source files for unfinished markers",
+                profile.language
+            ),
         )
     } else {
         CheckResult {
@@ -862,7 +915,9 @@ fn source_security_scan(profile: SourceProfile, repo: &Path) -> CheckResult {
                 });
             }
             if lower.contains("http://")
-                && (lower.contains("<script") || lower.contains("@import") || lower.contains("<link"))
+                && (lower.contains("<script")
+                    || lower.contains("@import")
+                    || lower.contains("<link"))
             {
                 findings.push(Finding {
                     code: "VF_WEB_INSECURE_REMOTE_RESOURCE".into(),
@@ -947,7 +1002,9 @@ impl WebInventory {
             inventory.runtimes.insert("Bun");
         }
 
-        if repo.join("package-lock.json").is_file() || (!package.is_empty() && inventory.package_managers.is_empty()) {
+        if repo.join("package-lock.json").is_file()
+            || (!package.is_empty() && inventory.package_managers.is_empty())
+        {
             inventory.package_managers.insert("npm");
         }
         if repo.join("pnpm-lock.yaml").is_file() {
@@ -1086,12 +1143,10 @@ impl WebInventory {
 
     fn has_api_surface(&self) -> bool {
         !self.server_frameworks.is_empty()
-            || self.meta_frameworks.iter().any(|name| {
-                matches!(
-                    *name,
-                    "Next.js" | "Nuxt" | "SvelteKit" | "Astro" | "Remix"
-                )
-            })
+            || self
+                .meta_frameworks
+                .iter()
+                .any(|name| matches!(*name, "Next.js" | "Nuxt" | "SvelteKit" | "Astro" | "Remix"))
     }
 
     fn summary(&self) -> String {
@@ -1142,24 +1197,17 @@ fn web_dependency_inventory(
     execution: &dyn ExecutionAdapter,
     inventory: &WebInventory,
 ) -> CheckResult {
-    if repo.join("node_modules").is_dir() {
-        if let Some(manager) = package_manager(execution, repo) {
-            let args = match manager {
-                "npm" => vec!["ls".into(), "--all".into(), "--omit=optional".into()],
-                "pnpm" => vec!["list".into(), "--depth".into(), "Infinity".into()],
-                "yarn" => vec!["list".into(), "--json".into()],
-                "bun" => vec!["pm".into(), "ls".into()],
-                _ => Vec::new(),
-            };
-            return run_specialist_command(
-                repo,
-                execution,
-                "dependencies",
-                manager,
-                args,
-                inventory,
-            );
-        }
+    if repo.join("node_modules").is_dir()
+        && let Some(manager) = package_manager(execution, repo)
+    {
+        let args = match manager {
+            "npm" => vec!["ls".into(), "--all".into(), "--omit=optional".into()],
+            "pnpm" => vec!["list".into(), "--depth".into(), "Infinity".into()],
+            "yarn" => vec!["list".into(), "--json".into()],
+            "bun" => vec!["pm".into(), "ls".into()],
+            _ => Vec::new(),
+        };
+        return run_specialist_command(repo, execution, "dependencies", manager, args, inventory);
     }
     let manifest_count = [
         "package.json",
@@ -1254,7 +1302,9 @@ fn run_package_script(
         return CheckResult::fail(
             format!("{}:{check_name}", profile.id),
             "VF_WEB_PACKAGE_MANAGER_MISSING",
-            format!("package script {script} exists but no supported package manager is executable"),
+            format!(
+                "package script {script} exists but no supported package manager is executable"
+            ),
         );
     };
     run_source_command(
@@ -1389,7 +1439,10 @@ fn collect_files(path: &Path, files: &mut Vec<PathBuf>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            let name = path.file_name().and_then(|value| value.to_str()).unwrap_or_default();
+            let name = path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or_default();
             if matches!(
                 name,
                 ".git"
@@ -1441,10 +1494,19 @@ fn interactive_control_count(profile: SourceProfile, repo: &Path) -> usize {
         .iter()
         .filter_map(|path| fs::read_to_string(path).ok())
         .map(|content| {
-            ["<button", "<input", "<select", "<textarea", "<a ", "onclick=", "@click=", "on:click"]
-                .iter()
-                .map(|marker| content.matches(marker).count())
-                .sum::<usize>()
+            [
+                "<button",
+                "<input",
+                "<select",
+                "<textarea",
+                "<a ",
+                "onclick=",
+                "@click=",
+                "on:click",
+            ]
+            .iter()
+            .map(|marker| content.matches(marker).count())
+            .sum::<usize>()
         })
         .sum()
 }
@@ -1478,7 +1540,11 @@ fn rename_check(mut result: CheckResult, check: String) -> CheckResult {
 }
 
 fn sanitize_output(value: &str) -> String {
-    value.chars().take(2000).collect::<String>().replace('\n', " ")
+    value
+        .chars()
+        .take(2000)
+        .collect::<String>()
+        .replace('\n', " ")
 }
 
 #[cfg(test)]
@@ -1533,8 +1599,14 @@ mod tests {
     #[test]
     fn framework_source_formats_are_first_class() {
         let root = fixture("templates");
-        fs::write(root.join("App.vue"), "<template><main>ok</main></template>\n").unwrap();
-        let detection = WebTemplateAdapter.detect(&root).expect("template detection");
+        fs::write(
+            root.join("App.vue"),
+            "<template><main>ok</main></template>\n",
+        )
+        .unwrap();
+        let detection = WebTemplateAdapter
+            .detect(&root)
+            .expect("template detection");
         assert_eq!(detection.language, "Web Template/SFC");
         assert_eq!(detection.confidence_percent, 98);
         let _ = fs::remove_dir_all(root);
@@ -1569,11 +1641,42 @@ mod tests {
         let inventory = WebInventory::detect(&root);
         let summary = inventory.summary();
         for expected in [
-            "Node.js", "React", "Vue", "Angular", "Svelte", "SolidJS", "Qwik", "Lit",
-            "Next.js", "Nuxt", "SvelteKit", "Astro", "Remix", "Express", "Fastify",
-            "NestJS", "Koa", "Hono", "Vite", "webpack", "Rollup", "esbuild", "Parcel",
-            "Vitest", "Jest", "Playwright", "Cypress", "Tailwind CSS", "PostCSS", "Sass",
-            "Less", "Vercel", "Netlify", "Cloudflare Workers/Pages", "Firebase", "pnpm",
+            "Node.js",
+            "React",
+            "Vue",
+            "Angular",
+            "Svelte",
+            "SolidJS",
+            "Qwik",
+            "Lit",
+            "Next.js",
+            "Nuxt",
+            "SvelteKit",
+            "Astro",
+            "Remix",
+            "Express",
+            "Fastify",
+            "NestJS",
+            "Koa",
+            "Hono",
+            "Vite",
+            "webpack",
+            "Rollup",
+            "esbuild",
+            "Parcel",
+            "Vitest",
+            "Jest",
+            "Playwright",
+            "Cypress",
+            "Tailwind CSS",
+            "PostCSS",
+            "Sass",
+            "Less",
+            "Vercel",
+            "Netlify",
+            "Cloudflare Workers/Pages",
+            "Firebase",
+            "pnpm",
         ] {
             assert!(summary.contains(expected), "missing {expected}: {summary}");
         }
