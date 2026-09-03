@@ -1,0 +1,171 @@
+name: JVM Family CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-jvm-family:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install pinned Kotlin compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/kotlin-compiler.zip"
+          curl -fsSL "https://github.com/JetBrains/kotlin/releases/download/v2.4.10/kotlin-compiler-2.4.10.zip" -o "${archive}"
+          echo "473dd66c7a3ef4b182065b3da670466c1bf2773a9dbb0ed8b33a39fe9d4f876d  ${archive}" | sha256sum -c -
+          unzip -q "${archive}" -d "${RUNNER_TEMP}/kotlin"
+          echo "${RUNNER_TEMP}/kotlin/kotlinc/bin" >> "${GITHUB_PATH}"
+
+      - name: Install pinned Scala CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/scala-cli.gz"
+          binary="${RUNNER_TEMP}/scala-cli"
+          curl -fsSL "https://github.com/VirtusLab/scala-cli/releases/download/v1.16.0/scala-cli-x86_64-pc-linux.gz" -o "${archive}"
+          echo "36364cb7305d4a9ce81f65c476b3dfcfd3e00b62bd19da9e86b4391ec9537924  ${archive}" | sha256sum -c -
+          gzip -dc "${archive}" > "${binary}"
+          chmod +x "${binary}"
+          install -m 0755 "${binary}" /usr/local/bin/scala-cli
+
+      - name: Verify JVM toolchains
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -version
+          javac -version
+          kotlinc -version
+          scala-cli version
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Verify Rust workspace quality
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --workspace --all-targets --locked
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace --all-targets --locked
+
+      - name: Verify real Java fixture through native adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="${RUNNER_TEMP}/verificationforge-java-fixture"
+          mkdir -p "${fixture}/src" "${fixture}/tests"
+          cat > "${fixture}/src/Adder.java" <<'JAVA'
+          public final class Adder {
+              private Adder() {}
+
+              public static int add(int left, int right) {
+                  return left + right;
+              }
+          }
+          JAVA
+          cat > "${fixture}/tests/AdderTest.java" <<'JAVA'
+          public final class AdderTest {
+              public static void main(String[] args) {
+                  if (Adder.add(2, 3) != 5) {
+                      throw new AssertionError("add failed");
+                  }
+              }
+          }
+          JAVA
+          set +e
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=Java adapter=java confidence=90%$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=java:build language=Java status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=java:type-check language=Java status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=java:lint language=Java status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=java:test language=Java status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=java:placeholders language=Java status=PASS$' <<<"${output}"
+          test "$(grep -c '^VERIFICATIONFORGE_LANGUAGE=Java adapter=java ' <<<"${output}")" -eq 1
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+          test "${status}" -eq 0
+
+      - name: Verify real Kotlin fixture through native adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="${RUNNER_TEMP}/verificationforge-kotlin-fixture"
+          mkdir -p "${fixture}/src" "${fixture}/tests"
+          cat > "${fixture}/src/Adder.kt" <<'KOTLIN'
+          object Adder {
+              fun add(left: Int, right: Int): Int = left + right
+          }
+          KOTLIN
+          cat > "${fixture}/tests/AdderTest.kt" <<'KOTLIN'
+          fun main() {
+              check(Adder.add(2, 3) == 5) { "add failed" }
+          }
+          KOTLIN
+          set +e
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=Kotlin adapter=kotlin confidence=90%$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=kotlin:build language=Kotlin status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=kotlin:type-check language=Kotlin status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=kotlin:lint language=Kotlin status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=kotlin:test language=Kotlin status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=kotlin:placeholders language=Kotlin status=PASS$' <<<"${output}"
+          test "$(grep -c '^VERIFICATIONFORGE_LANGUAGE=Kotlin adapter=kotlin ' <<<"${output}")" -eq 1
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+          test "${status}" -eq 0
+
+      - name: Verify real Scala fixture through native adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="${RUNNER_TEMP}/verificationforge-scala-fixture"
+          mkdir -p "${fixture}/src" "${fixture}/tests"
+          cat > "${fixture}/src/Adder.scala" <<'SCALA'
+          object Adder {
+            def add(left: Int, right: Int): Int = left + right
+          }
+          SCALA
+          cat > "${fixture}/tests/AdderTest.scala" <<'SCALA'
+          object AdderTest {
+            def main(args: Array[String]): Unit = {
+              assert(Adder.add(2, 3) == 5, "add failed")
+            }
+          }
+          SCALA
+          set +e
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=Scala adapter=scala confidence=90%$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=scala:build language=Scala status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=scala:type-check language=Scala status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=scala:lint language=Scala status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=scala:test language=Scala status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=scala:placeholders language=Scala status=PASS$' <<<"${output}"
+          test "$(grep -c '^VERIFICATIONFORGE_LANGUAGE=Scala adapter=scala ' <<<"${output}")" -eq 1
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+          test "${status}" -eq 0
