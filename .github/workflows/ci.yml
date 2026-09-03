@@ -16,11 +16,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
       - run: cargo fmt --all -- --check
       - run: cargo check --workspace --all-targets --locked
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace --all-targets --locked
+      - name: Install pinned Rust coverage tool
+        run: cargo install cargo-llvm-cov --locked --version 0.9.0
+      - name: Verify a real Rust Commit gate
+        run: cargo test -p verificationforge-cli --test commit_gate_real_rust -- --ignored --nocapture
       - name: Self-verify Rust patch gate
         shell: bash
         run: |
