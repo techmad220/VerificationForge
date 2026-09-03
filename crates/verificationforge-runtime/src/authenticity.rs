@@ -79,7 +79,7 @@ fn scan_explicit_placeholders(
     content: &str,
     findings: &mut Vec<Finding>,
 ) {
-    let markers = vec![
+    let markers = [
         (["TO", "DO:"].concat(), "unfinished work marker"),
         (["FIX", "ME:"].concat(), "unfinished fix marker"),
         (["X", "XX:"].concat(), "unfinished work marker"),
@@ -97,7 +97,7 @@ fn scan_explicit_placeholders(
 
     for (index, line) in content.lines().enumerate() {
         let trimmed = line.trim();
-        if is_test_or_example_line(path, trimmed) {
+        if test_assertion_line(path, trimmed) {
             continue;
         }
         if let Some((_, description)) = markers
@@ -133,49 +133,37 @@ fn scan_explicit_placeholders(
 
 fn scan_semantic_fakes(repo: &Path, path: &Path, content: &str, findings: &mut Vec<Finding>) {
     match extension(path).as_str() {
-        "rs" => scan_braced_family(repo, path, content, BracedFamily::Rust, findings),
-        "go" => scan_braced_family(repo, path, content, BracedFamily::Go, findings),
-        "js" | "jsx" | "ts" | "tsx" => {
-            scan_braced_family(repo, path, content, BracedFamily::JavaScript, findings)
-        }
-        "java" | "kt" | "kts" | "cs" | "swift" | "php" => {
-            scan_braced_family(repo, path, content, BracedFamily::PublicMethods, findings)
-        }
         "py" | "pyi" => scan_python(repo, path, content, findings),
         "rb" => scan_ruby(repo, path, content, findings),
+        "rs" | "go" | "js" | "jsx" | "ts" | "tsx" | "java" | "kt" | "kts" | "cs"
+        | "swift" | "php" | "c" | "h" | "cc" | "cpp" | "cxx" | "hpp" | "hh" => {
+            scan_braced(repo, path, content, findings)
+        }
         _ => {}
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-enum BracedFamily {
-    Rust,
-    Go,
-    JavaScript,
-    PublicMethods,
+struct Signature<'a> {
+    name: &'a str,
+    externally_visible: bool,
 }
 
-fn scan_braced_family(
-    repo: &Path,
-    path: &Path,
-    content: &str,
-    family: BracedFamily,
-    findings: &mut Vec<Finding>,
-) {
+fn scan_braced(repo: &Path, path: &Path, content: &str, findings: &mut Vec<Finding>) {
+    let ext = extension(path);
     let lines = content.lines().collect::<Vec<_>>();
     for (index, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
-        let Some(signature) = braced_signature(trimmed, family) else {
+        let Some(signature) = signature_for(trimmed, &ext) else {
             continue;
         };
         let sensitive = sensitive_gate_name(signature.name);
-        let externally_visible = signature.externally_visible;
-        if !sensitive && !externally_visible {
+        if !sensitive && !signature.externally_visible {
             continue;
         }
 
         if let Some(body) = inline_body(trimmed) {
-            if externally_visible && body_is_empty(body) {
+            if signature.externally_visible && body_is_empty(body) {
                 findings.push(fake_finding(
                     repo,
                     path,
@@ -198,14 +186,14 @@ fn scan_braced_family(
         if !trimmed.contains('{') {
             continue;
         }
-        let Some((body_line, body)) = next_code_line(&lines, index + 1) else {
+        let Some((body_index, body)) = next_code_line(&lines, index + 1) else {
             continue;
         };
-        if externally_visible && body == "}" {
+        if signature.externally_visible && body == "}" {
             findings.push(fake_finding(
                 repo,
                 path,
-                body_line + 1,
+                body_index + 1,
                 signature.name,
                 "externally visible function has an empty implementation",
             ));
@@ -213,7 +201,7 @@ fn scan_braced_family(
             findings.push(fake_finding(
                 repo,
                 path,
-                body_line + 1,
+                body_index + 1,
                 signature.name,
                 "authorization/authentication/permission decision is constant",
             ));
@@ -221,83 +209,78 @@ fn scan_braced_family(
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct FunctionSignature<'a> {
-    name: &'a str,
-    externally_visible: bool,
+fn signature_for<'a>(line: &'a str, ext: &str) -> Option<Signature<'a>> {
+    match ext {
+        "rs" => rust_signature(line),
+        "go" => go_signature(line),
+        "js" | "jsx" | "ts" | "tsx" => javascript_signature(line),
+        _ => public_method_signature(line),
+    }
 }
 
-fn braced_signature(line: &str, family: BracedFamily) -> Option<FunctionSignature<'_>> {
-    match family {
-        BracedFamily::Rust => {
-            let externally_visible = line.starts_with("pub ") || line.starts_with("pub(");
-            let function = line.find("fn ")?;
-            let name = identifier(&line[function + 3..]);
-            (!name.is_empty()).then_some(FunctionSignature {
-                name,
-                externally_visible,
-            })
-        }
-        BracedFamily::Go => {
-            let rest = line.strip_prefix("func ")?.trim_start();
-            let rest = if rest.starts_with('(') {
-                let close = rest.find(')')?;
-                rest[close + 1..].trim_start()
-            } else {
-                rest
-            };
-            let name = identifier(rest);
-            let externally_visible = name
-                .chars()
-                .next()
-                .is_some_and(|character| character.is_ascii_uppercase());
-            (!name.is_empty()).then_some(FunctionSignature {
-                name,
-                externally_visible,
-            })
-        }
-        BracedFamily::JavaScript => {
-            let externally_visible = line.starts_with("export ")
-                || line.starts_with("exports.")
-                || line.starts_with("module.exports");
-            let name = if let Some(function) = line.find("function ") {
-                identifier(&line[function + "function ".len()..])
-            } else if let Some(arrow) = line.find("=>") {
-                let left = line[..arrow].trim_end();
-                let candidate = left
-                    .split(['=', ' ', ':'])
-                    .filter(|value| !value.is_empty())
-                    .next_back()
-                    .unwrap_or_default();
-                identifier(candidate)
-            } else {
-                ""
-            };
-            (!name.is_empty()).then_some(FunctionSignature {
-                name,
-                externally_visible,
-            })
-        }
-        BracedFamily::PublicMethods => {
-            let externally_visible = line.contains("public ")
-                || line.starts_with("public ")
-                || line.starts_with("export ");
-            let paren = line.find('(')?;
-            let left = line[..paren].trim_end();
-            let name = left
-                .split(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
-                .filter(|value| !value.is_empty())
-                .next_back()
-                .unwrap_or_default();
-            if matches!(name, "if" | "for" | "while" | "switch" | "catch") {
-                return None;
-            }
-            (!name.is_empty()).then_some(FunctionSignature {
-                name,
-                externally_visible,
-            })
-        }
+fn rust_signature(line: &str) -> Option<Signature<'_>> {
+    let function = line.find("fn ")?;
+    let name = identifier(&line[function + 3..]);
+    (!name.is_empty()).then_some(Signature {
+        name,
+        externally_visible: line.starts_with("pub ") || line.starts_with("pub("),
+    })
+}
+
+fn go_signature(line: &str) -> Option<Signature<'_>> {
+    let rest = line.strip_prefix("func ")?.trim_start();
+    let rest = if rest.starts_with('(') {
+        let close = rest.find(')')?;
+        rest[close + 1..].trim_start()
+    } else {
+        rest
+    };
+    let name = identifier(rest);
+    (!name.is_empty()).then_some(Signature {
+        name,
+        externally_visible: name
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_uppercase()),
+    })
+}
+
+fn javascript_signature(line: &str) -> Option<Signature<'_>> {
+    let externally_visible = line.starts_with("export ")
+        || line.starts_with("exports.")
+        || line.starts_with("module.exports");
+    let name = if let Some(function) = line.find("function ") {
+        identifier(&line[function + "function ".len()..])
+    } else if let Some(arrow) = line.find("=>") {
+        let left = line[..arrow].trim_end();
+        let candidate = left
+            .split(['=', ' ', ':'])
+            .rfind(|value| !value.is_empty())
+            .unwrap_or_default();
+        identifier(candidate)
+    } else {
+        ""
+    };
+    (!name.is_empty()).then_some(Signature {
+        name,
+        externally_visible,
+    })
+}
+
+fn public_method_signature(line: &str) -> Option<Signature<'_>> {
+    let paren = line.find('(')?;
+    let left = line[..paren].trim_end();
+    let name = left
+        .split(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
+        .rfind(|value| !value.is_empty())
+        .unwrap_or_default();
+    if name.is_empty() || matches!(name, "if" | "for" | "while" | "switch" | "catch") {
+        return None;
     }
+    Some(Signature {
+        name,
+        externally_visible: false,
+    })
 }
 
 fn scan_python(repo: &Path, path: &Path, content: &str, findings: &mut Vec<Finding>) {
@@ -314,22 +297,20 @@ fn scan_python(repo: &Path, path: &Path, content: &str, findings: &mut Vec<Findi
         if name.is_empty() {
             continue;
         }
-        let sensitive = sensitive_gate_name(name);
-        let externally_visible = !name.starts_with('_');
         let indent = line.len().saturating_sub(trimmed.len());
         let Some((body_index, body)) = next_indented_code_line(&lines, index + 1, indent) else {
             continue;
         };
-        let normalized = body.trim();
-        if externally_visible && normalized == "pass" {
+        let body = body.trim();
+        if !name.starts_with('_') && matches!(body, "pass" | "...") {
             findings.push(fake_finding(
                 repo,
                 path,
                 body_index + 1,
                 name,
-                "externally visible function body is only pass",
+                "externally visible function has no implementation",
             ));
-        } else if sensitive && constant_decision_body(normalized) {
+        } else if sensitive_gate_name(name) && constant_decision_body(body) {
             findings.push(fake_finding(
                 repo,
                 path,
@@ -344,15 +325,13 @@ fn scan_python(repo: &Path, path: &Path, content: &str, findings: &mut Vec<Findi
 fn scan_ruby(repo: &Path, path: &Path, content: &str, findings: &mut Vec<Finding>) {
     let lines = content.lines().collect::<Vec<_>>();
     for (index, line) in lines.iter().enumerate() {
-        let trimmed = line.trim();
-        let Some(rest) = trimmed.strip_prefix("def ") else {
+        let Some(rest) = line.trim().strip_prefix("def ") else {
             continue;
         };
         let name = identifier(rest);
         if name.is_empty() {
             continue;
         }
-        let sensitive = sensitive_gate_name(name);
         let Some((body_index, body)) = next_code_line(&lines, index + 1) else {
             continue;
         };
@@ -364,7 +343,7 @@ fn scan_ruby(repo: &Path, path: &Path, content: &str, findings: &mut Vec<Finding
                 name,
                 "method has an empty implementation",
             ));
-        } else if sensitive && constant_decision_body(body) {
+        } else if sensitive_gate_name(name) && constant_decision_body(body) {
             findings.push(fake_finding(
                 repo,
                 path,
@@ -454,7 +433,7 @@ fn is_comment(line: &str) -> bool {
         || line.starts_with('*')
 }
 
-fn is_test_or_example_line(path: &Path, line: &str) -> bool {
+fn test_assertion_line(path: &Path, line: &str) -> bool {
     let file = path
         .file_name()
         .and_then(|value| value.to_str())
@@ -522,7 +501,7 @@ fn visit(path: &Path, depth: usize, files: &mut Vec<PathBuf>) {
             }
             visit(&child, depth + 1, files);
         } else if kind.is_file()
-            && is_source_file(&child)
+            && source_file(&child)
             && fs::metadata(&child).is_ok_and(|metadata| metadata.len() <= MAX_SCAN_BYTES)
         {
             files.push(child);
@@ -547,7 +526,7 @@ fn ignored_directory(name: &str) -> bool {
     )
 }
 
-fn is_source_file(path: &Path) -> bool {
+fn source_file(path: &Path) -> bool {
     matches!(
         extension(path).as_str(),
         "rs" | "py"
@@ -680,12 +659,10 @@ mod tests {
         );
         let result = scan_file("marker", "service.py", &source);
         assert_eq!(result.status, CheckStatus::Fail);
-        assert!(
-            result
-                .findings
-                .iter()
-                .any(|finding| finding.code == "VF_CRITICAL_PLACEHOLDER")
-        );
+        assert!(result
+            .findings
+            .iter()
+            .any(|finding| finding.code == "VF_CRITICAL_PLACEHOLDER"));
     }
 
     #[test]
@@ -703,12 +680,10 @@ mod tests {
             "def authorize(user):\n    return True\n",
         );
         assert_eq!(auth_result.status, CheckStatus::Fail);
-        assert!(
-            auth_result
-                .findings
-                .iter()
-                .any(|finding| finding.code == "VF_CRITICAL_FAKE_IMPLEMENTATION")
-        );
+        assert!(auth_result
+            .findings
+            .iter()
+            .any(|finding| finding.code == "VF_CRITICAL_FAKE_IMPLEMENTATION"));
     }
 
     #[test]
@@ -739,5 +714,15 @@ mod tests {
             "export function authorize(user) { return true; }\n",
         );
         assert_eq!(auth.status, CheckStatus::Fail);
+    }
+
+    #[test]
+    fn non_sensitive_constant_helper_is_not_false_positive() {
+        let result = scan_file(
+            "go-helper",
+            "feature.go",
+            "package feature\nfunc enabled() bool { return true }\n",
+        );
+        assert_eq!(result.status, CheckStatus::Pass);
     }
 }
