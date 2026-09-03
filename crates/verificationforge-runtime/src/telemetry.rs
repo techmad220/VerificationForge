@@ -11,11 +11,50 @@ use crate::ControlledDevelopmentSession;
 
 const MAX_SUMMARY_CHARS: usize = 2_000;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum OperationPurpose {
+    #[default]
     Normal,
     FixAttempt,
     RegressionTest,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OperationContext {
+    pub requirement: Option<RequirementId>,
+    pub purpose: OperationPurpose,
+    pub files: Vec<String>,
+    pub symbols: Vec<SymbolId>,
+    pub evidence_ids: Vec<String>,
+}
+
+impl OperationContext {
+    pub fn for_requirement(requirement: RequirementId) -> Self {
+        Self {
+            requirement: Some(requirement),
+            ..Self::default()
+        }
+    }
+
+    pub fn with_purpose(mut self, purpose: OperationPurpose) -> Self {
+        self.purpose = purpose;
+        self
+    }
+
+    pub fn with_file(mut self, file: impl Into<String>) -> Self {
+        self.files.push(file.into());
+        self
+    }
+
+    pub fn with_symbols(mut self, symbols: impl IntoIterator<Item = SymbolId>) -> Self {
+        self.symbols.extend(symbols);
+        self
+    }
+
+    pub fn with_evidence(mut self, evidence_ids: impl IntoIterator<Item = String>) -> Self {
+        self.evidence_ids.extend(evidence_ids);
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,13 +116,14 @@ impl OperationTelemetry {
             .filter(|operation| operation.purpose == OperationPurpose::RegressionTest)
     }
 
-    pub fn for_requirement<'a>(
-        &'a self,
-        requirement: &'a RequirementId,
-    ) -> impl Iterator<Item = &'a OperationTraceEntry> + 'a {
+    pub fn operations_for_requirement(
+        &self,
+        requirement: &RequirementId,
+    ) -> Vec<&OperationTraceEntry> {
         self.operations
             .iter()
-            .filter(move |operation| operation.requirement.as_ref() == Some(requirement))
+            .filter(|operation| operation.requirement.as_ref() == Some(requirement))
+            .collect()
     }
 
     fn record(&mut self, mut operation: OperationTraceEntry) {
@@ -105,6 +145,32 @@ struct TraceSpec {
     command: Option<CommandInvocation>,
 }
 
+impl TraceSpec {
+    fn new(
+        kind: AgentOperationKind,
+        target: impl Into<String>,
+        mut files: Vec<String>,
+        context: OperationContext,
+        command: Option<CommandInvocation>,
+    ) -> Self {
+        for file in context.files {
+            if !files.contains(&file) {
+                files.push(file);
+            }
+        }
+        Self {
+            requirement: context.requirement,
+            kind,
+            purpose: context.purpose,
+            target: target.into(),
+            files,
+            symbols: context.symbols,
+            evidence_ids: context.evidence_ids,
+            command,
+        }
+    }
+}
+
 pub struct TrackedDevelopmentSession {
     inner: ControlledDevelopmentSession,
     agent: String,
@@ -120,13 +186,8 @@ impl TrackedDevelopmentSession {
         execution: Arc<dyn ExecutionAdapter>,
     ) -> Result<Self, String> {
         let agent = agent.into();
-        let inner = ControlledDevelopmentSession::new(
-            repo,
-            agent.clone(),
-            risk,
-            policy,
-            execution,
-        )?;
+        let inner =
+            ControlledDevelopmentSession::new(repo, agent.clone(), risk, policy, execution)?;
         Ok(Self {
             inner,
             agent,
@@ -162,40 +223,43 @@ impl TrackedDevelopmentSession {
         &mut self,
         relative: &Path,
         content: &[u8],
-        requirement: RequirementId,
-        symbols: Vec<SymbolId>,
+        context: OperationContext,
     ) -> Result<(), String> {
         let target = display_target(relative);
-        let spec = TraceSpec {
-            requirement: Some(requirement.clone()),
-            kind: AgentOperationKind::Write,
-            purpose: OperationPurpose::Normal,
-            target: target.clone(),
-            files: vec![target],
-            symbols,
-            evidence_ids: Vec::new(),
-            command: None,
+        let spec = TraceSpec::new(
+            AgentOperationKind::Write,
+            target.clone(),
+            vec![target],
+            context,
+            None,
+        );
+        let Some(requirement) = spec.requirement.clone() else {
+            return self.reject(spec, "tracked write requires an explicit requirement");
         };
-        self.capture_unit(spec, |inner| inner.write_file(relative, content, requirement))
+        self.capture_unit(spec, |inner| {
+            inner.write_file(relative, content, requirement)
+        })
     }
 
     pub fn write_dependency_file(
         &mut self,
         relative: &Path,
         content: &[u8],
-        requirement: RequirementId,
-        symbols: Vec<SymbolId>,
+        context: OperationContext,
     ) -> Result<(), String> {
         let target = display_target(relative);
-        let spec = TraceSpec {
-            requirement: Some(requirement.clone()),
-            kind: AgentOperationKind::DependencyChange,
-            purpose: OperationPurpose::Normal,
-            target: target.clone(),
-            files: vec![target],
-            symbols,
-            evidence_ids: Vec::new(),
-            command: None,
+        let spec = TraceSpec::new(
+            AgentOperationKind::DependencyChange,
+            target.clone(),
+            vec![target],
+            context,
+            None,
+        );
+        let Some(requirement) = spec.requirement.clone() else {
+            return self.reject(
+                spec,
+                "tracked dependency change requires an explicit requirement",
+            );
         };
         self.capture_unit(spec, |inner| {
             inner.write_dependency_file(relative, content, requirement)
@@ -207,53 +271,39 @@ impl TrackedDevelopmentSession {
         relative: &Path,
         expected: &str,
         replacement: &str,
-        requirement: RequirementId,
-        symbols: Vec<SymbolId>,
+        context: OperationContext,
     ) -> Result<(), String> {
-        self.patch_with_purpose(
-            relative,
-            expected,
-            replacement,
-            requirement,
-            symbols,
-            OperationPurpose::Normal,
-        )
-    }
-
-    pub fn patch_fix(
-        &mut self,
-        relative: &Path,
-        expected: &str,
-        replacement: &str,
-        requirement: RequirementId,
-        symbols: Vec<SymbolId>,
-    ) -> Result<(), String> {
-        self.patch_with_purpose(
-            relative,
-            expected,
-            replacement,
-            requirement,
-            symbols,
-            OperationPurpose::FixAttempt,
-        )
+        let target = display_target(relative);
+        let spec = TraceSpec::new(
+            AgentOperationKind::Patch,
+            target.clone(),
+            vec![target],
+            context,
+            None,
+        );
+        let Some(requirement) = spec.requirement.clone() else {
+            return self.reject(spec, "tracked patch requires an explicit requirement");
+        };
+        self.capture_unit(spec, |inner| {
+            inner.patch_file(relative, expected, replacement, requirement)
+        })
     }
 
     pub fn delete_file(
         &mut self,
         relative: &Path,
-        requirement: RequirementId,
-        symbols: Vec<SymbolId>,
+        context: OperationContext,
     ) -> Result<(), String> {
         let target = display_target(relative);
-        let spec = TraceSpec {
-            requirement: Some(requirement.clone()),
-            kind: AgentOperationKind::Delete,
-            purpose: OperationPurpose::Normal,
-            target: target.clone(),
-            files: vec![target],
-            symbols,
-            evidence_ids: Vec::new(),
-            command: None,
+        let spec = TraceSpec::new(
+            AgentOperationKind::Delete,
+            target.clone(),
+            vec![target],
+            context,
+            None,
+        );
+        let Some(requirement) = spec.requirement.clone() else {
+            return self.reject(spec, "tracked delete requires an explicit requirement");
         };
         self.capture_unit(spec, |inner| inner.delete_file(relative, requirement))
     }
@@ -262,21 +312,19 @@ impl TrackedDevelopmentSession {
         &mut self,
         from: &Path,
         to: &Path,
-        requirement: RequirementId,
-        symbols: Vec<SymbolId>,
+        context: OperationContext,
     ) -> Result<(), String> {
         let source = display_target(from);
         let destination = display_target(to);
-        let target = format!("{source} -> {destination}");
-        let spec = TraceSpec {
-            requirement: Some(requirement.clone()),
-            kind: AgentOperationKind::Rename,
-            purpose: OperationPurpose::Normal,
-            target,
-            files: vec![source, destination],
-            symbols,
-            evidence_ids: Vec::new(),
-            command: None,
+        let spec = TraceSpec::new(
+            AgentOperationKind::Rename,
+            format!("{source} -> {destination}"),
+            vec![source, destination],
+            context,
+            None,
+        );
+        let Some(requirement) = spec.requirement.clone() else {
+            return self.reject(spec, "tracked rename requires an explicit requirement");
         };
         self.capture_unit(spec, |inner| inner.rename_file(from, to, requirement))
     }
@@ -285,96 +333,73 @@ impl TrackedDevelopmentSession {
         &mut self,
         program: &str,
         args: &[String],
-        requirement: RequirementId,
-        symbols: Vec<SymbolId>,
+        context: OperationContext,
     ) -> Result<ExecutionResult, String> {
-        self.run_command_with_purpose(
+        let command = CommandInvocation {
+            program: program.to_owned(),
+            args: args.to_vec(),
+        };
+        let spec = TraceSpec::new(
             AgentOperationKind::Command,
-            OperationPurpose::Normal,
             program,
-            args,
-            Some(requirement),
             Vec::new(),
-            symbols,
-        )
-    }
-
-    pub fn run_fix_command(
-        &mut self,
-        program: &str,
-        args: &[String],
-        requirement: RequirementId,
-        symbols: Vec<SymbolId>,
-    ) -> Result<ExecutionResult, String> {
-        self.run_command_with_purpose(
-            AgentOperationKind::Command,
-            OperationPurpose::FixAttempt,
-            program,
-            args,
-            Some(requirement),
-            Vec::new(),
-            symbols,
-        )
+            context,
+            Some(command),
+        );
+        let Some(requirement) = spec.requirement.clone() else {
+            return self.reject_execution(
+                spec,
+                "tracked command requires an explicit requirement",
+            );
+        };
+        self.capture_execution(spec, |inner| {
+            inner.run_command(program, args, requirement)
+        })
     }
 
     pub fn run_test(
         &mut self,
         program: &str,
         args: &[String],
-        requirement: Option<RequirementId>,
-        symbols: Vec<SymbolId>,
+        context: OperationContext,
     ) -> Result<ExecutionResult, String> {
-        self.run_command_with_purpose(
+        let requirement = context.requirement.clone();
+        let command = CommandInvocation {
+            program: program.to_owned(),
+            args: args.to_vec(),
+        };
+        let spec = TraceSpec::new(
             AgentOperationKind::Test,
-            OperationPurpose::Normal,
             program,
-            args,
-            requirement,
             Vec::new(),
-            symbols,
-        )
-    }
-
-    pub fn run_regression_test(
-        &mut self,
-        program: &str,
-        args: &[String],
-        requirement: RequirementId,
-        evidence_ids: Vec<String>,
-        symbols: Vec<SymbolId>,
-    ) -> Result<ExecutionResult, String> {
-        self.run_command_with_purpose(
-            AgentOperationKind::Test,
-            OperationPurpose::RegressionTest,
-            program,
-            args,
-            Some(requirement),
-            evidence_ids,
-            symbols,
-        )
+            context,
+            Some(command),
+        );
+        self.capture_execution(spec, |inner| {
+            inner.run_test(program, args, requirement)
+        })
     }
 
     pub fn commit(
         &mut self,
         message: &str,
-        requirement: RequirementId,
-        evidence_ids: Vec<String>,
-        symbols: Vec<SymbolId>,
+        context: OperationContext,
     ) -> Result<ExecutionResult, String> {
-        let args = vec!["commit".to_owned(), "-m".to_owned(), message.to_owned()];
-        let spec = TraceSpec {
-            requirement: Some(requirement.clone()),
-            kind: AgentOperationKind::Commit,
-            purpose: OperationPurpose::Normal,
-            target: "git commit".into(),
-            files: Vec::new(),
-            symbols,
-            evidence_ids: evidence_ids.clone(),
-            command: Some(CommandInvocation {
-                program: "git".into(),
-                args,
-            }),
+        let command = CommandInvocation {
+            program: "git".into(),
+            args: vec!["commit".into(), "-m".into(), message.into()],
         };
+        let spec = TraceSpec::new(
+            AgentOperationKind::Commit,
+            "git commit",
+            Vec::new(),
+            context,
+            Some(command),
+        );
+        let Some(requirement) = spec.requirement.clone() else {
+            return self.reject_execution(spec, "tracked commit requires an explicit requirement");
+        };
+        let evidence_ids = spec.evidence_ids.clone();
         self.capture_execution(spec, |inner| {
             inner.commit(message, requirement, evidence_ids)
         })
@@ -382,87 +407,26 @@ impl TrackedDevelopmentSession {
 
     pub fn authorize_certification(
         &mut self,
-        requirement: RequirementId,
-        evidence_ids: Vec<String>,
         engine_certification_id: String,
-        symbols: Vec<SymbolId>,
+        context: OperationContext,
     ) -> Result<(), String> {
-        let spec = TraceSpec {
-            requirement: Some(requirement.clone()),
-            kind: AgentOperationKind::Certification,
-            purpose: OperationPurpose::Normal,
-            target: "repository certification".into(),
-            files: Vec::new(),
-            symbols,
-            evidence_ids: evidence_ids.clone(),
-            command: None,
+        let spec = TraceSpec::new(
+            AgentOperationKind::Certification,
+            "repository certification",
+            Vec::new(),
+            context,
+            None,
+        );
+        let Some(requirement) = spec.requirement.clone() else {
+            return self.reject(
+                spec,
+                "tracked certification requires an explicit requirement",
+            );
         };
+        let evidence_ids = spec.evidence_ids.clone();
         self.capture_unit(spec, |inner| {
             inner.authorize_certification(requirement, evidence_ids, engine_certification_id)
         })
-    }
-
-    fn patch_with_purpose(
-        &mut self,
-        relative: &Path,
-        expected: &str,
-        replacement: &str,
-        requirement: RequirementId,
-        symbols: Vec<SymbolId>,
-        purpose: OperationPurpose,
-    ) -> Result<(), String> {
-        let target = display_target(relative);
-        let spec = TraceSpec {
-            requirement: Some(requirement.clone()),
-            kind: AgentOperationKind::Patch,
-            purpose,
-            target: target.clone(),
-            files: vec![target],
-            symbols,
-            evidence_ids: Vec::new(),
-            command: None,
-        };
-        self.capture_unit(spec, |inner| {
-            inner.patch_file(relative, expected, replacement, requirement)
-        })
-    }
-
-    fn run_command_with_purpose(
-        &mut self,
-        kind: AgentOperationKind,
-        purpose: OperationPurpose,
-        program: &str,
-        args: &[String],
-        requirement: Option<RequirementId>,
-        evidence_ids: Vec<String>,
-        symbols: Vec<SymbolId>,
-    ) -> Result<ExecutionResult, String> {
-        let spec = TraceSpec {
-            requirement: requirement.clone(),
-            kind,
-            purpose,
-            target: program.to_owned(),
-            files: Vec::new(),
-            symbols,
-            evidence_ids,
-            command: Some(CommandInvocation {
-                program: program.to_owned(),
-                args: args.to_vec(),
-            }),
-        };
-        match kind {
-            AgentOperationKind::Test => self.capture_execution(spec, |inner| {
-                inner.run_test(program, args, requirement)
-            }),
-            AgentOperationKind::Command => {
-                let requirement = requirement
-                    .ok_or_else(|| "tracked command requires an explicit requirement".to_owned())?;
-                self.capture_execution(spec, |inner| {
-                    inner.run_command(program, args, requirement)
-                })
-            }
-            _ => Err("tracked command received a non-command operation kind".into()),
-        }
     }
 
     fn capture_unit<F>(&mut self, spec: TraceSpec, action: F) -> Result<(), String>
@@ -484,7 +448,12 @@ impl TrackedDevelopmentSession {
                 summary: summarize(error),
             },
         };
-        self.record_trace(spec, started_unix_ms, started.elapsed().as_millis(), outcome);
+        self.record_trace(
+            spec,
+            started_unix_ms,
+            started.elapsed().as_millis(),
+            outcome,
+        );
         result
     }
 
@@ -511,8 +480,40 @@ impl TrackedDevelopmentSession {
                 summary: summarize(error),
             },
         };
-        self.record_trace(spec, started_unix_ms, started.elapsed().as_millis(), outcome);
+        self.record_trace(
+            spec,
+            started_unix_ms,
+            started.elapsed().as_millis(),
+            outcome,
+        );
         result
+    }
+
+    fn reject(&mut self, spec: TraceSpec, message: &str) -> Result<(), String> {
+        self.record_rejection(spec, message);
+        Err(message.into())
+    }
+
+    fn reject_execution(
+        &mut self,
+        spec: TraceSpec,
+        message: &str,
+    ) -> Result<ExecutionResult, String> {
+        self.record_rejection(spec, message);
+        Err(message.into())
+    }
+
+    fn record_rejection(&mut self, spec: TraceSpec, message: &str) {
+        self.record_trace(
+            spec,
+            unix_ms(),
+            0,
+            OperationOutcome {
+                accepted: false,
+                exit_code: None,
+                summary: summarize(message),
+            },
+        );
     }
 
     fn record_trace(
@@ -606,6 +607,12 @@ mod tests {
         SymbolId("rust:function:src/lib.rs::value".into())
     }
 
+    fn context(purpose: OperationPurpose) -> OperationContext {
+        OperationContext::for_requirement(requirement())
+            .with_purpose(purpose)
+            .with_symbols([symbol()])
+    }
+
     #[test]
     fn tracks_files_symbols_commands_results_and_special_attempts() {
         let root = temp_dir();
@@ -624,27 +631,24 @@ mod tests {
             .write_file(
                 Path::new("src/lib.rs"),
                 b"pub fn value() -> u8 { 1 }\n",
-                requirement(),
-                vec![symbol()],
+                context(OperationPurpose::Normal),
             )
             .expect("write source");
         session
-            .patch_fix(
+            .patch_file(
                 Path::new("src/lib.rs"),
                 "1",
                 "2",
-                requirement(),
-                vec![symbol()],
+                context(OperationPurpose::FixAttempt),
             )
             .expect("patch fix");
         let args = vec!["test".into(), "--workspace".into(), "--locked".into()];
         session
-            .run_regression_test(
+            .run_test(
                 "cargo",
                 &args,
-                requirement(),
-                vec!["evidence-regression".into()],
-                vec![symbol()],
+                context(OperationPurpose::RegressionTest)
+                    .with_evidence(["evidence-regression".into()]),
             )
             .expect("regression test");
 
@@ -663,8 +667,25 @@ mod tests {
             })
         );
         assert_eq!(operations[2].outcome.exit_code, Some(0));
-        assert!(operations.iter().all(|operation| operation.outcome.accepted));
-        assert!(operations.iter().all(|operation| operation.started_unix_ms > 0));
+        assert!(
+            operations
+                .iter()
+                .all(|operation| operation.outcome.accepted)
+        );
+        assert!(
+            operations
+                .iter()
+                .all(|operation| operation.started_unix_ms > 0)
+        );
+        assert_eq!(session.telemetry().fix_attempts().count(), 1);
+        assert_eq!(session.telemetry().regression_tests().count(), 1);
+        assert_eq!(
+            session
+                .telemetry()
+                .operations_for_requirement(&requirement())
+                .len(),
+            3
+        );
         assert_eq!(
             execution
                 .calls
@@ -698,9 +719,7 @@ mod tests {
         let error = session
             .commit(
                 "blocked commit",
-                requirement(),
-                vec!["evidence-1".into()],
-                vec![symbol()],
+                context(OperationPurpose::Normal).with_evidence(["evidence-1".into()]),
             )
             .expect_err("commit must be denied");
         assert!(error.contains("VF_FIREWALL_ACTIVE_BLOCKER"));
@@ -725,6 +744,30 @@ mod tests {
                 .expect("calls lock poisoned")
                 .is_empty()
         );
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn missing_requirement_is_traced_before_execution() {
+        let root = temp_dir();
+        fs::create_dir_all(&root).expect("create root");
+        let execution = Arc::new(RecordingExecution::default());
+        let mut session = TrackedDevelopmentSession::new(
+            &root,
+            "agent-a",
+            RiskTier::High,
+            DevelopmentFirewallPolicy::default(),
+            execution,
+        )
+        .expect("create tracked session");
+
+        let error = session
+            .run_command("cargo", &["check".into()], OperationContext::default())
+            .expect_err("unscoped command must fail");
+        assert!(error.contains("explicit requirement"));
+        let operation = session.telemetry().operations().last().expect("trace entry");
+        assert!(!operation.outcome.accepted);
+        assert_eq!(operation.command.as_ref().expect("command").args, ["check"]);
         fs::remove_dir_all(root).ok();
     }
 }
