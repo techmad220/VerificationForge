@@ -58,7 +58,9 @@ impl ProjectInventory {
                     inventory.database_technologies.insert("SQL".into());
                 }
                 "sol" => {
-                    inventory.smart_contract_technologies.insert("Solidity".into());
+                    inventory
+                        .smart_contract_technologies
+                        .insert("Solidity".into());
                 }
                 "vy" => {
                     inventory.smart_contract_technologies.insert("Vyper".into());
@@ -79,7 +81,9 @@ impl ProjectInventory {
                     inventory.shader_technologies.insert("WGSL".into());
                 }
                 "tf" => {
-                    inventory.infrastructure_technologies.insert("Terraform".into());
+                    inventory
+                        .infrastructure_technologies
+                        .insert("Terraform".into());
                 }
                 _ => {}
             }
@@ -117,10 +121,14 @@ impl ProjectInventory {
                     inventory.test_systems.insert("pytest".into());
                 }
                 "Dockerfile" | "Containerfile" => {
-                    inventory.infrastructure_technologies.insert("Container".into());
+                    inventory
+                        .infrastructure_technologies
+                        .insert("Container".into());
                 }
                 "docker-compose.yml" | "docker-compose.yaml" | "compose.yml" | "compose.yaml" => {
-                    inventory.infrastructure_technologies.insert("Docker Compose".into());
+                    inventory
+                        .infrastructure_technologies
+                        .insert("Docker Compose".into());
                 }
                 "openapi.json" | "openapi.yaml" | "openapi.yml" | "swagger.json"
                 | "swagger.yaml" | "swagger.yml" => {
@@ -129,9 +137,7 @@ impl ProjectInventory {
                 _ => {}
             }
 
-            if relative_text.starts_with("migrations/")
-                || relative_text.contains("/migrations/")
-            {
+            if relative_text.starts_with("migrations/") || relative_text.contains("/migrations/") {
                 inventory.database_technologies.insert("Migrations".into());
             }
 
@@ -279,14 +285,23 @@ mod tests {
         let root = temp_dir();
         fs::create_dir_all(root.join("src")).expect("create src");
         fs::create_dir_all(root.join("migrations")).expect("create migrations");
-        fs::write(root.join("Cargo.toml"), "[package]\nname='demo'\nversion='0.1.0'\n")
-            .expect("write Cargo.toml");
-        fs::write(root.join("src/lib.rs"), "use axum::Router; use sqlx::Pool;\n")
-            .expect("write rust");
+        fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname='demo'\nversion='0.1.0'\n",
+        )
+        .expect("write Cargo.toml");
+        fs::write(
+            root.join("src/lib.rs"),
+            "use axum::Router; use sqlx::Pool;\n",
+        )
+        .expect("write rust");
         fs::write(root.join("pyproject.toml"), "[project]\nname='demo_py'\n")
             .expect("write pyproject");
-        fs::write(root.join("service.py"), "from fastapi import FastAPI\nimport pytest\n")
-            .expect("write python");
+        fs::write(
+            root.join("service.py"),
+            "from fastapi import FastAPI\nimport pytest\n",
+        )
+        .expect("write python");
         fs::write(root.join("migrations/001.sql"), "select 1;\n").expect("write sql");
         fs::write(root.join("openapi.yaml"), "openapi: 3.1.0\n").expect("write api");
         fs::write(root.join("Dockerfile"), "FROM scratch\n").expect("write container");
