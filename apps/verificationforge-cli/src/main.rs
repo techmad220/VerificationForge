@@ -12,6 +12,9 @@ use verificationforge_adapter_jvm_family::{JavaAdapter, KotlinAdapter, ScalaAdap
 use verificationforge_adapter_python::PythonAdapter;
 use verificationforge_adapter_rust::RustAdapter;
 use verificationforge_adapter_script_family::{BashAdapter, PhpAdapter, PowerShellAdapter};
+use verificationforge_adapter_web_family::{
+    CssAdapter, HtmlAdapter, MarkdownAdapter, WebEcosystemSpecialist, WebTemplateAdapter,
+};
 use verificationforge_runtime::{
     AdapterRegistry, CheckStatus, ProcessExecutionAdapter, RepositoryConfig, RiskTier,
     VerificationEngine, VerificationLevel, VerificationSession,
@@ -68,6 +71,11 @@ fn run() -> Result<bool, String> {
     registry.register(Arc::new(PowerShellAdapter));
     registry.register(Arc::new(PhpAdapter));
     registry.register(Arc::new(AssemblyAdapter));
+    registry.register(Arc::new(HtmlAdapter));
+    registry.register(Arc::new(CssAdapter));
+    registry.register(Arc::new(MarkdownAdapter));
+    registry.register(Arc::new(WebTemplateAdapter));
+    registry.register_specialist(Arc::new(WebEcosystemSpecialist));
     for adapter in builtin_fallback_adapters() {
         registry.register(adapter);
     }
