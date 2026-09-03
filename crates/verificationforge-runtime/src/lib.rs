@@ -2,11 +2,11 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 
+use verificationforge_core::LanguageAdapter;
 pub use verificationforge_core::{
     CheckKind, CheckResult, CheckStatus, ExecutionAdapter, ExecutionResult, LanguageDetection,
     VerificationLevel,
 };
-use verificationforge_core::LanguageAdapter;
 
 #[derive(Default)]
 pub struct AdapterRegistry {
@@ -219,10 +219,7 @@ mod tests {
                     "test failed",
                 )
             } else if check == CheckKind::TypeCheck {
-                CheckResult::skipped(
-                    format!("{}:type-check", self.id),
-                    "covered by build",
-                )
+                CheckResult::skipped(format!("{}:type-check", self.id), "covered by build")
             } else {
                 CheckResult::pass(format!("{}:{}", self.id, check.as_str()))
             }
