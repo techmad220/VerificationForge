@@ -220,6 +220,10 @@ fn signature_for<'a>(line: &'a str, ext: &str) -> Option<Signature<'a>> {
 
 fn rust_signature(line: &str) -> Option<Signature<'_>> {
     let function = line.find("fn ")?;
+    let prefix = &line[..function];
+    if prefix.contains('"') || prefix.contains("//") {
+        return None;
+    }
     let name = identifier(&line[function + 3..]);
     (!name.is_empty()).then_some(Signature {
         name,
@@ -718,6 +722,16 @@ mod tests {
             "export function authorize(user) { return true; }\n",
         );
         assert_eq!(auth.status, CheckStatus::Fail);
+    }
+
+    #[test]
+    fn embedded_rust_source_text_is_not_treated_as_live_code() {
+        let result = scan_file(
+            "rust-fixture-text",
+            "lib.rs",
+            "pub fn demo() { let source = \"pub fn authorize_user() -> bool { true }\"; }\n",
+        );
+        assert_eq!(result.status, CheckStatus::Pass);
     }
 
     #[test]
