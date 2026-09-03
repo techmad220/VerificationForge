@@ -167,18 +167,14 @@ pub(crate) fn run_ui_verification(
             "no affected Rust/UI surface was detected for this checkpoint",
         );
     }
-    run_repository_harness(
-        repo,
-        execution,
-        "rust:checkpoint-ui",
-        "checkpoint-ui",
+    run_repository_harness(repo, execution, "rust:checkpoint-ui", "checkpoint-ui").unwrap_or_else(
+        || {
+            CheckResult::unsupported(
+                "rust:checkpoint-ui",
+                "affected UI surface detected but .verificationforge/checkpoint-ui.argv is missing",
+            )
+        },
     )
-    .unwrap_or_else(|| {
-        CheckResult::unsupported(
-            "rust:checkpoint-ui",
-            "affected UI surface detected but .verificationforge/checkpoint-ui.argv is missing",
-        )
-    })
 }
 
 pub(crate) fn run_api_verification(
@@ -224,9 +220,10 @@ fn rust_target_paths(scope: &ImpactScope) -> BTreeSet<String> {
 fn rust_relevant_path(relative: &str) -> bool {
     let path = Path::new(relative);
     path.extension().and_then(|value| value.to_str()) == Some("rs")
-        || path.file_name().and_then(|value| value.to_str()).is_some_and(|name| {
-            matches!(name, "Cargo.toml" | "Cargo.lock")
-        })
+        || path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .is_some_and(|name| matches!(name, "Cargo.toml" | "Cargo.lock"))
 }
 
 fn rust_package_info_for_path(repo: &Path, relative: &str) -> Option<(String, PathBuf)> {
@@ -256,10 +253,7 @@ fn rust_package_info_for_path(repo: &Path, relative: &str) -> Option<(String, Pa
     None
 }
 
-fn checkpoint_packages(
-    repo: &Path,
-    scope: &ImpactScope,
-) -> Option<BTreeSet<(String, PathBuf)>> {
+fn checkpoint_packages(repo: &Path, scope: &ImpactScope) -> Option<BTreeSet<(String, PathBuf)>> {
     let paths = rust_target_paths(scope);
     if paths.is_empty() {
         return None;
@@ -522,7 +516,10 @@ mod tests {
         let execution = RecordingExecution::default();
         let integration = run_integration_tests(&execution, &root, &scope());
         let property = run_property_tests(&execution, &root, &scope());
-        assert_eq!(integration.status, verificationforge_core::CheckStatus::Pass);
+        assert_eq!(
+            integration.status,
+            verificationforge_core::CheckStatus::Pass
+        );
         assert_eq!(property.status, verificationforge_core::CheckStatus::Pass);
         assert!(integration.has_reproducible_evidence());
         assert!(property.has_reproducible_evidence());
@@ -533,10 +530,12 @@ mod tests {
     fn missing_property_marker_fails_closed() {
         let root = temp_dir();
         package_fixture(&root);
-        fs::write(root.join("src/lib.rs"), "pub fn value() -> u8 { 1 }\n")
-            .expect("replace source");
+        fs::write(root.join("src/lib.rs"), "pub fn value() -> u8 { 1 }\n").expect("replace source");
         let result = run_property_tests(&RecordingExecution::default(), &root, &scope());
-        assert_eq!(result.status, verificationforge_core::CheckStatus::Unsupported);
+        assert_eq!(
+            result.status,
+            verificationforge_core::CheckStatus::Unsupported
+        );
         fs::remove_dir_all(root).ok();
     }
 
@@ -550,7 +549,10 @@ mod tests {
         )
         .expect("write api marker");
         let result = run_api_verification(&RecordingExecution::default(), &root, &scope());
-        assert_eq!(result.status, verificationforge_core::CheckStatus::Unsupported);
+        assert_eq!(
+            result.status,
+            verificationforge_core::CheckStatus::Unsupported
+        );
         fs::remove_dir_all(root).ok();
     }
 }

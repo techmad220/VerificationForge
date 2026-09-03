@@ -137,7 +137,10 @@ fn real_rust_checkpoint_accepts_affected_integration_property_security_and_depen
         .expect("real Rust Checkpoint gate should run");
 
     assert!(report.patch.accepted, "PatchGate prerequisite must pass");
-    assert!(report.accepted, "clean affected checkpoint should be accepted");
+    assert!(
+        report.accepted,
+        "clean affected checkpoint should be accepted"
+    );
     assert!(!report.patch.impact.requires_full_verification);
     assert!(report.patch.impact.changed_paths.contains("src/lib.rs"));
 
@@ -158,9 +161,11 @@ fn real_rust_checkpoint_accepts_affected_integration_property_security_and_depen
     }
 
     for phase in [CheckpointGatePhase::Ui, CheckpointGatePhase::Api] {
-        assert!(report.entries.iter().any(|entry| {
-            entry.phase == phase && entry.result.status == CheckStatus::Skipped
-        }));
+        assert!(
+            report.entries.iter().any(|entry| {
+                entry.phase == phase && entry.result.status == CheckStatus::Skipped
+            })
+        );
     }
 
     fs::remove_dir_all(root).ok();
@@ -177,8 +182,14 @@ fn real_rust_checkpoint_rejects_missing_property_verification_after_other_tests_
     let report = CheckpointGate::verify(&engine(), &root, &baseline, &graph())
         .expect("real Rust Checkpoint gate should run");
 
-    assert!(report.patch.accepted, "ordinary PatchGate checks must still pass");
-    assert!(!report.accepted, "missing property proof must block checkpoint");
+    assert!(
+        report.patch.accepted,
+        "ordinary PatchGate checks must still pass"
+    );
+    assert!(
+        !report.accepted,
+        "missing property proof must block checkpoint"
+    );
     assert!(report.entries.iter().any(|entry| {
         entry.phase == CheckpointGatePhase::Integration
             && entry.result.status == CheckStatus::Pass

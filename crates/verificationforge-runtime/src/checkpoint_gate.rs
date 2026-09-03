@@ -169,9 +169,7 @@ impl CheckpointGate {
             });
         }
 
-        let accepted = entries
-            .iter()
-            .all(|entry| checkpoint_entry_accepts(entry, no_changes));
+        let accepted = entries.iter().all(checkpoint_entry_accepts);
         Ok(CheckpointGateReport {
             patch,
             entries,
@@ -194,20 +192,19 @@ fn push(
     });
 }
 
-fn checkpoint_entry_accepts(entry: &CheckpointGateEntry, no_changes: bool) -> bool {
+fn checkpoint_entry_accepts(entry: &CheckpointGateEntry) -> bool {
     match entry.result.status {
         CheckStatus::Fail | CheckStatus::Unsupported => false,
         CheckStatus::Pass => {
             entry.result.has_reproducible_evidence() && !entry.result.has_blocking_finding()
         }
-        CheckStatus::Skipped => {
-            matches!(entry.phase, CheckpointGatePhase::Ui | CheckpointGatePhase::Api)
-                || (no_changes
-                    && matches!(
-                        entry.phase,
-                        CheckpointGatePhase::Integration | CheckpointGatePhase::Property
-                    ))
-        }
+        CheckStatus::Skipped => matches!(
+            entry.phase,
+            CheckpointGatePhase::Integration
+                | CheckpointGatePhase::Property
+                | CheckpointGatePhase::Ui
+                | CheckpointGatePhase::Api
+        ),
     }
 }
 
@@ -258,11 +255,7 @@ mod tests {
             )
         }
 
-        fn run_parse_check(
-            &self,
-            _repo: &Path,
-            _execution: &dyn ExecutionAdapter,
-        ) -> CheckResult {
+        fn run_parse_check(&self, _repo: &Path, _execution: &dyn ExecutionAdapter) -> CheckResult {
             if self.patch_ok {
                 CheckResult::pass_with_evidence("demo:parse", "parse evidence")
             } else {
@@ -270,11 +263,7 @@ mod tests {
             }
         }
 
-        fn run_format_check(
-            &self,
-            _repo: &Path,
-            _execution: &dyn ExecutionAdapter,
-        ) -> CheckResult {
+        fn run_format_check(&self, _repo: &Path, _execution: &dyn ExecutionAdapter) -> CheckResult {
             CheckResult::pass_with_evidence("demo:format", "format evidence")
         }
 
@@ -403,11 +392,13 @@ mod tests {
         .expect("checkpoint should run");
         assert!(report.patch.accepted);
         assert!(report.accepted);
-        assert!(seen_scope
-            .lock()
-            .expect("scope lock poisoned")
-            .as_ref()
-            .is_some_and(|scope| scope.changed_paths.contains("service.demo")));
+        assert!(
+            seen_scope
+                .lock()
+                .expect("scope lock poisoned")
+                .as_ref()
+                .is_some_and(|scope| scope.changed_paths.contains("service.demo"))
+        );
         fs::remove_dir_all(repo).ok();
     }
 
