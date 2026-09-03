@@ -209,7 +209,10 @@ fn run_command(
     program: &str,
     args: &[&str],
 ) -> CheckResult {
-    let owned = args.iter().map(|value| (*value).to_owned()).collect::<Vec<_>>();
+    let owned = args
+        .iter()
+        .map(|value| (*value).to_owned())
+        .collect::<Vec<_>>();
     match execution.execute(program, &owned, repo) {
         Ok(output) if output.success() => CheckResult::pass_with_evidence(
             name(check),
@@ -492,7 +495,10 @@ fn has_ui_assets(repo: &Path) -> bool {
             .and_then(|value| value.to_str())
             .unwrap_or_default()
             .to_ascii_lowercase();
-        matches!(extension.as_str(), "html" | "htm" | "css" | "js" | "ts" | "tsx" | "jsx" | "tmpl")
+        matches!(
+            extension.as_str(),
+            "html" | "htm" | "css" | "js" | "ts" | "tsx" | "jsx" | "tmpl"
+        )
     })
 }
 
@@ -558,7 +564,13 @@ fn sanitize_output(value: &str) -> String {
     value
         .chars()
         .take(1000)
-        .map(|character| if character.is_control() { ' ' } else { character })
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
         .collect::<String>()
 }
 
@@ -608,8 +620,11 @@ mod tests {
     fn fixture(name: &str, source: &str) -> PathBuf {
         let root = temp_dir(name);
         fs::create_dir_all(&root).expect("create root");
-        fs::write(root.join("go.mod"), "module verificationforge.example/test\n\ngo 1.22\n")
-            .expect("write module");
+        fs::write(
+            root.join("go.mod"),
+            "module verificationforge.example/test\n\ngo 1.22\n",
+        )
+        .expect("write module");
         fs::write(root.join("main.go"), source).expect("write source");
         root
     }
@@ -651,7 +666,10 @@ mod tests {
             assert!(result.has_reproducible_evidence());
         }
         let calls = execution.calls.lock().expect("calls lock poisoned");
-        assert_eq!(calls[0], ("go".into(), vec!["build".into(), "./...".into()]));
+        assert_eq!(
+            calls[0],
+            ("go".into(), vec!["build".into(), "./...".into()])
+        );
         assert_eq!(
             calls[1],
             (
@@ -663,7 +681,10 @@ mod tests {
         assert_eq!(calls[3], ("go".into(), vec!["test".into(), "./...".into()]));
         assert_eq!(
             calls[4],
-            ("go".into(), vec!["list".into(), "-deps".into(), "./...".into()])
+            (
+                "go".into(),
+                vec!["list".into(), "-deps".into(), "./...".into()]
+            )
         );
         fs::remove_dir_all(root).ok();
     }
@@ -703,11 +724,8 @@ mod tests {
     #[test]
     fn advanced_checks_fail_closed_without_go_specific_harness() {
         let root = fixture("advanced", "package main\nfunc main() {}\n");
-        let result = GoAdapter.run_check(
-            CheckKind::Mutation,
-            &root,
-            &RecordingExecution::default(),
-        );
+        let result =
+            GoAdapter.run_check(CheckKind::Mutation, &root, &RecordingExecution::default());
         assert_eq!(result.status, CheckStatus::Unsupported);
         assert!(!result.has_reproducible_evidence());
         fs::remove_dir_all(root).ok();
