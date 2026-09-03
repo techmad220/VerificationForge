@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use verificationforge_adapter_assembly::AssemblyAdapter;
 use verificationforge_adapter_c_family::{CAdapter, CSharpAdapter, CppAdapter};
 use verificationforge_adapter_fallback::builtin_fallback_adapters;
 use verificationforge_adapter_go::GoAdapter;
@@ -66,6 +67,7 @@ fn run() -> Result<bool, String> {
     registry.register(Arc::new(BashAdapter));
     registry.register(Arc::new(PowerShellAdapter));
     registry.register(Arc::new(PhpAdapter));
+    registry.register(Arc::new(AssemblyAdapter));
     for adapter in builtin_fallback_adapters() {
         registry.register(adapter);
     }

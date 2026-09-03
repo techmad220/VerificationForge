@@ -1,0 +1,3 @@
+# Assembly adapter verification status
+
+Assembly is verified as a native first-class VerificationForge language adapter covering GNU-style `.s`/`.S` and NASM-style `.asm` sources. Assembly CI proves independent real GNU and NASM repositories through the public CLI with evidence-backed build, type, lint, test and authenticity results. The same implementation head also passes Script Family CI, JVM Family CI, and the complete VerificationForge regression suite including real CommitGate and CertificationGate proofs. The master tracker marks exactly Assembly complete for language expansion; broader architecture-specific assembler dialects and platform-specific ABI coverage remain separate future expansion work.

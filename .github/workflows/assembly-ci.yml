@@ -1,0 +1,114 @@
+name: Assembly CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-assembly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install native assembly toolchains
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends nasm binutils gcc
+          gcc --version | head -n 1
+          as --version | head -n 1
+          nasm -v
+          ld --version | head -n 1
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Verify Rust workspace quality
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --workspace --all-targets --locked
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace --all-targets --locked
+
+      - name: Verify real GNU Assembly fixture through native adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="${RUNNER_TEMP}/verificationforge-gnu-assembly-fixture"
+          mkdir -p "${fixture}/src" "${fixture}/tests"
+          cat > "${fixture}/src/add.s" <<'ASM'
+          .text
+          .globl add_numbers
+          add_numbers:
+              mov %rdi, %rax
+              add %rsi, %rax
+              ret
+          ASM
+          cat > "${fixture}/tests/smoke.s" <<'ASM'
+          .text
+          .globl main
+          main:
+              xor %eax, %eax
+              ret
+          ASM
+          set +e
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=Assembly adapter=assembly confidence=94%$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=assembly:build language=Assembly status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=assembly:type-check language=Assembly status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=assembly:lint language=Assembly status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=assembly:test language=Assembly status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=assembly:placeholders language=Assembly status=PASS$' <<<"${output}"
+          test "$(grep -c '^VERIFICATIONFORGE_LANGUAGE=Assembly adapter=assembly ' <<<"${output}")" -eq 1
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+          test "${status}" -eq 0
+
+      - name: Verify real NASM fixture through native adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="${RUNNER_TEMP}/verificationforge-nasm-fixture"
+          mkdir -p "${fixture}/src" "${fixture}/tests"
+          cat > "${fixture}/src/add.asm" <<'ASM'
+          section .text
+          global add_numbers
+          add_numbers:
+              mov rax, rdi
+              add rax, rsi
+              ret
+          ASM
+          cat > "${fixture}/tests/smoke.asm" <<'ASM'
+          section .text
+          global main
+          main:
+              xor eax, eax
+              ret
+          ASM
+          set +e
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=Assembly adapter=assembly confidence=94%$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=assembly:build language=Assembly status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=assembly:type-check language=Assembly status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=assembly:lint language=Assembly status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=assembly:test language=Assembly status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=assembly:placeholders language=Assembly status=PASS$' <<<"${output}"
+          test "$(grep -c '^VERIFICATIONFORGE_LANGUAGE=Assembly adapter=assembly ' <<<"${output}")" -eq 1
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+          test "${status}" -eq 0
