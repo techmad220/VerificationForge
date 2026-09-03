@@ -62,9 +62,7 @@ impl LanguageAdapter for RustAdapter {
                 run_cargo(execution, repo, check, &["tree", "--workspace", "--locked"])
             }
             CheckKind::Placeholders => scan_placeholders(repo),
-            CheckKind::Security => {
-                optional_cargo_tool(execution, repo, check, "audit", &["audit"])
-            }
+            CheckKind::Security => optional_cargo_tool(execution, repo, check, "audit", &["audit"]),
             CheckKind::Coverage => optional_cargo_tool(
                 execution,
                 repo,
