@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -139,10 +140,7 @@ impl CheckResult {
         }
     }
 
-    pub fn pass_with_evidence(
-        check: impl Into<String>,
-        evidence: impl Into<String>,
-    ) -> Self {
+    pub fn pass_with_evidence(check: impl Into<String>, evidence: impl Into<String>) -> Self {
         Self {
             check: check.into(),
             status: CheckStatus::Pass,
@@ -199,9 +197,9 @@ impl CheckResult {
     }
 
     pub fn has_reproducible_evidence(&self) -> bool {
-        self.findings.iter().any(|finding| {
-            finding.code == "VF_EVIDENCE" && !finding.message.trim().is_empty()
-        })
+        self.findings
+            .iter()
+            .any(|finding| finding.code == "VF_EVIDENCE" && !finding.message.trim().is_empty())
     }
 }
 
@@ -287,9 +285,84 @@ pub trait ExecutionAdapter: Send + Sync {
     ) -> Result<ExecutionResult, String>;
 }
 
+pub fn run_repository_harness(
+    repo: &Path,
+    execution: &dyn ExecutionAdapter,
+    check_name: impl Into<String>,
+    harness_name: &str,
+) -> Option<CheckResult> {
+    let check_name = check_name.into();
+    let relative = format!(".verificationforge/{harness_name}.argv");
+    let path = repo.join(&relative);
+    if !path.is_file() {
+        return None;
+    }
+
+    let content = match fs::read_to_string(&path) {
+        Ok(content) => content,
+        Err(error) => {
+            return Some(CheckResult::fail(
+                check_name,
+                "VF_HARNESS_READ_FAILED",
+                format!("cannot read {relative}: {error}"),
+            ));
+        }
+    };
+    let mut command = content
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'));
+    let Some(program) = command.next() else {
+        return Some(CheckResult::fail(
+            check_name,
+            "VF_HARNESS_EMPTY",
+            format!("{relative} contains no executable command"),
+        ));
+    };
+    let args = command.map(str::to_owned).collect::<Vec<_>>();
+
+    match execution.execute(program, &args, repo) {
+        Ok(output) if output.success() => Some(CheckResult::pass_with_evidence(
+            check_name,
+            format!(
+                "harness={relative} command={} {} exit=0",
+                program,
+                args.join(" ")
+            ),
+        )),
+        Ok(output) => Some(CheckResult::fail(
+            check_name,
+            "VF_HARNESS_FAILED",
+            format!(
+                "harness {relative} command {} {} exited with code {}: {}",
+                program,
+                args.join(" "),
+                output.exit_code,
+                command_detail(&output)
+            ),
+        )),
+        Err(error) => Some(CheckResult::fail(
+            check_name,
+            "VF_HARNESS_EXECUTION_FAILED",
+            format!("cannot execute {relative}: {error}"),
+        )),
+    }
+}
+
+fn command_detail(output: &ExecutionResult) -> String {
+    let detail = if output.stderr.trim().is_empty() {
+        output.stdout.trim()
+    } else {
+        output.stderr.trim()
+    };
+    detail.chars().take(4000).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn graph_links_requirement_to_symbol() {
@@ -326,5 +399,59 @@ mod tests {
         let backed = CheckResult::pass_with_evidence("demo:build", "command=demo build exit=0");
         assert!(!bare.has_reproducible_evidence());
         assert!(backed.has_reproducible_evidence());
+    }
+
+    struct RecordingExecution {
+        call: Mutex<Option<(String, Vec<String>)>>,
+    }
+
+    impl ExecutionAdapter for RecordingExecution {
+        fn id(&self) -> &'static str {
+            "recording"
+        }
+
+        fn execute(
+            &self,
+            program: &str,
+            args: &[String],
+            _cwd: &Path,
+        ) -> Result<ExecutionResult, String> {
+            *self.call.lock().expect("lock poisoned") = Some((program.into(), args.to_vec()));
+            Ok(ExecutionResult {
+                exit_code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+            })
+        }
+    }
+
+    #[test]
+    fn repository_harness_preserves_argument_boundaries() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock before epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("vf-harness-{nonce}"));
+        fs::create_dir_all(root.join(".verificationforge")).expect("create harness dir");
+        fs::write(
+            root.join(".verificationforge/contracts.argv"),
+            "# exact argv\ncargo\ntest\n--workspace\n--locked\n",
+        )
+        .expect("write harness");
+        let execution = RecordingExecution {
+            call: Mutex::new(None),
+        };
+        let result = run_repository_harness(&root, &execution, "rust:contracts", "contracts")
+            .expect("harness exists");
+        assert_eq!(result.status, CheckStatus::Pass);
+        assert!(result.has_reproducible_evidence());
+        assert_eq!(
+            execution.call.lock().expect("lock poisoned").clone(),
+            Some((
+                "cargo".into(),
+                vec!["test".into(), "--workspace".into(), "--locked".into()]
+            ))
+        );
+        fs::remove_dir_all(root).ok();
     }
 }
