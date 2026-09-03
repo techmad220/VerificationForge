@@ -157,7 +157,10 @@ fn detect(language: JvmLanguage, repo: &Path) -> Option<LanguageDetection> {
     }
     let files = repository_files(repo);
     let manifest = files.iter().any(|path| {
-        let name = path.file_name().and_then(|value| value.to_str()).unwrap_or_default();
+        let name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
         match language {
             JvmLanguage::Java => matches!(
                 name,
@@ -280,11 +283,7 @@ fn build_check(
     compile_check(language, repo, execution, "build", false)
 }
 
-fn lint_check(
-    language: JvmLanguage,
-    repo: &Path,
-    execution: &dyn ExecutionAdapter,
-) -> CheckResult {
+fn lint_check(language: JvmLanguage, repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResult {
     if let Some(result) = build_system_command(language, repo, execution, "lint") {
         return result;
     }
@@ -312,7 +311,9 @@ fn compile_check(
         );
     }
     match language {
-        JvmLanguage::Java => compile_java(repo, execution, check_name, warnings_as_errors, &sources),
+        JvmLanguage::Java => {
+            compile_java(repo, execution, check_name, warnings_as_errors, &sources)
+        }
         JvmLanguage::Kotlin => {
             compile_kotlin(repo, execution, check_name, warnings_as_errors, &sources)
         }
@@ -447,11 +448,7 @@ fn targeted_tests(
     )
 }
 
-fn run_tests(
-    language: JvmLanguage,
-    repo: &Path,
-    execution: &dyn ExecutionAdapter,
-) -> CheckResult {
+fn run_tests(language: JvmLanguage, repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResult {
     if let Some(result) = build_system_command(language, repo, execution, "test") {
         return result;
     }
@@ -463,7 +460,9 @@ fn run_tests(
 }
 
 fn direct_java_tests(repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResult {
-    if !executable_available(execution, repo, "javac") || !executable_available(execution, repo, "java") {
+    if !executable_available(execution, repo, "javac")
+        || !executable_available(execution, repo, "java")
+    {
         return tool_missing(JvmLanguage::Java, "test", "javac/java");
     }
     let tests = test_files(JvmLanguage::Java, repo);
@@ -479,7 +478,12 @@ fn direct_java_tests(repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResu
         return execution_failure(JvmLanguage::Java, "test", error.to_string());
     }
     let mut args = vec!["-d".into(), output.to_string_lossy().into_owned()];
-    args.extend(sources.iter().chain(tests.iter()).map(|path| display_relative(repo, path)));
+    args.extend(
+        sources
+            .iter()
+            .chain(tests.iter())
+            .map(|path| display_relative(repo, path)),
+    );
     let compile = execution.execute("javac", &args, repo);
     match compile {
         Ok(value) if value.success() => {}
@@ -526,7 +530,9 @@ fn direct_java_tests(repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResu
 }
 
 fn direct_kotlin_tests(repo: &Path, execution: &dyn ExecutionAdapter) -> CheckResult {
-    if !executable_available(execution, repo, "kotlinc") || !executable_available(execution, repo, "java") {
+    if !executable_available(execution, repo, "kotlinc")
+        || !executable_available(execution, repo, "java")
+    {
         return tool_missing(JvmLanguage::Kotlin, "test", "kotlinc/java");
     }
     let tests = test_files(JvmLanguage::Kotlin, repo);
@@ -558,13 +564,7 @@ fn direct_kotlin_tests(repo: &Path, execution: &dyn ExecutionAdapter) -> CheckRe
             Ok(value) if value.success() => {}
             Ok(value) => {
                 fs::remove_file(&jar).ok();
-                return command_failed(
-                    JvmLanguage::Kotlin,
-                    "test",
-                    "kotlinc",
-                    &args,
-                    &value,
-                );
+                return command_failed(JvmLanguage::Kotlin, "test", "kotlinc", &args, &value);
             }
             Err(error) => {
                 fs::remove_file(&jar).ok();
@@ -626,13 +626,7 @@ fn direct_scala_tests(repo: &Path, execution: &dyn ExecutionAdapter) -> CheckRes
         match execution.execute("scala-cli", &args, repo) {
             Ok(value) if value.success() => executed += 1,
             Ok(value) => {
-                return command_failed(
-                    JvmLanguage::Scala,
-                    "test",
-                    "scala-cli",
-                    &args,
-                    &value,
-                );
+                return command_failed(JvmLanguage::Scala, "test", "scala-cli", &args, &value);
             }
             Err(error) => return execution_failure(JvmLanguage::Scala, "test", error),
         }
@@ -705,12 +699,7 @@ fn surface_verification(
             format!("no {} {surface} surface detected", language.name()),
         );
     }
-    required_harness(
-        language,
-        repo,
-        execution,
-        &format!("checkpoint-{surface}"),
-    )
+    required_harness(language, repo, execution, &format!("checkpoint-{surface}"))
 }
 
 fn dependency_check(
@@ -764,7 +753,10 @@ fn dependency_check(
     if !has_dependency_manifest(repo) {
         return CheckResult::pass_with_evidence(
             format!("{}:dependencies", language.id()),
-            format!("{} repository has no dependency manifest; native source-only dependency surface is empty", language.name()),
+            format!(
+                "{} repository has no dependency manifest; native source-only dependency surface is empty",
+                language.name()
+            ),
         );
     }
     required_harness(language, repo, execution, "dependencies")
@@ -934,7 +926,10 @@ fn whitespace_format_check(language: JvmLanguage, repo: &Path) -> CheckResult {
         if !content.is_empty() && !content.ends_with('\n') {
             findings.push(Finding {
                 code: "VF_FORMAT_FINAL_NEWLINE".into(),
-                message: format!("{} is missing a final newline", display_relative(repo, &path)),
+                message: format!(
+                    "{} is missing a final newline",
+                    display_relative(repo, &path)
+                ),
                 blocking: true,
             });
         }
@@ -942,9 +937,7 @@ fn whitespace_format_check(language: JvmLanguage, repo: &Path) -> CheckResult {
     if findings.is_empty() {
         CheckResult::pass_with_evidence(
             format!("{}:format", language.id()),
-            format!(
-                "deterministic built-in whitespace format policy files={scanned} violations=0"
-            ),
+            format!("deterministic built-in whitespace format policy files={scanned} violations=0"),
         )
     } else {
         CheckResult {
@@ -1021,7 +1014,10 @@ fn tool_missing(language: JvmLanguage, check_name: &str, tool: &str) -> CheckRes
     CheckResult::fail(
         format!("{}:{check_name}", language.id()),
         "VF_JVM_TOOLCHAIN_MISSING",
-        format!("{} repository detected but {tool} is not executable", language.name()),
+        format!(
+            "{} repository detected but {tool} is not executable",
+            language.name()
+        ),
     )
 }
 
@@ -1064,7 +1060,10 @@ fn test_files(language: JvmLanguage, repo: &Path) -> Vec<PathBuf> {
 }
 
 fn is_test_source(path: &Path) -> bool {
-    let relative = path.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
+    let relative = path
+        .to_string_lossy()
+        .replace('\\', "/")
+        .to_ascii_lowercase();
     let name = path
         .file_name()
         .and_then(|value| value.to_str())
@@ -1146,12 +1145,7 @@ fn has_concurrency_surface(language: JvmLanguage, repo: &Path) -> bool {
             "synchronized",
             "CompletableFuture",
         ],
-        JvmLanguage::Kotlin => &[
-            "kotlinx.coroutines",
-            "launch {",
-            "async {",
-            "Dispatchers.",
-        ],
+        JvmLanguage::Kotlin => &["kotlinx.coroutines", "launch {", "async {", "Dispatchers."],
         JvmLanguage::Scala => &[
             "scala.concurrent",
             "Future {",
@@ -1284,7 +1278,10 @@ fn java_method_name(line: &str) -> Option<&str> {
     let candidate = before.split_whitespace().last()?;
     let candidate = candidate.trim_matches(|character: char| character == '<' || character == '>');
     if candidate.is_empty()
-        || matches!(candidate, "if" | "for" | "while" | "switch" | "catch" | "new")
+        || matches!(
+            candidate,
+            "if" | "for" | "while" | "switch" | "catch" | "new"
+        )
     {
         None
     } else {
@@ -1293,7 +1290,8 @@ fn java_method_name(line: &str) -> Option<&str> {
 }
 
 fn identifier(value: &str) -> &str {
-    let value = value.trim_start_matches(|character: char| character.is_whitespace() || character == '`');
+    let value =
+        value.trim_start_matches(|character: char| character.is_whitespace() || character == '`');
     let end = value
         .find(|character: char| {
             !(character.is_ascii_alphanumeric() || character == '_' || character == '$')
@@ -1351,7 +1349,10 @@ mod tests {
         fs::write(root.join("B.kt"), "class B\n").expect("write kotlin");
         fs::write(root.join("C.scala"), "class C\n").expect("write scala");
         assert_eq!(JavaAdapter.detect(&root).expect("java").language, "Java");
-        assert_eq!(KotlinAdapter.detect(&root).expect("kotlin").language, "Kotlin");
+        assert_eq!(
+            KotlinAdapter.detect(&root).expect("kotlin").language,
+            "Kotlin"
+        );
         assert_eq!(ScalaAdapter.detect(&root).expect("scala").language, "Scala");
         fs::remove_dir_all(root).ok();
     }
