@@ -2,9 +2,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use verificationforge_core::{
-    CheckResult, ExecutionAdapter, ImpactScope, SymbolId, run_repository_harness,
-};
+use verificationforge_core::{CheckResult, ExecutionAdapter, ImpactScope, run_repository_harness};
 
 use super::{cargo_package_name, display_relative, has_ui_assets, run_named_command, source_files};
 
@@ -442,6 +440,7 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use verificationforge_core::SymbolId;
 
     #[derive(Default)]
     struct RecordingExecution {
