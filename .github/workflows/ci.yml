@@ -13,6 +13,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Install pinned TypeScript compiler
+        run: npm install --global typescript@5.9.2
+      - name: Verify native language toolchains
+        run: |
+          node --version
+          npm --version
+          tsc --version
+          cc --version
+          c++ --version
+          dotnet --version
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
@@ -113,6 +129,248 @@ jobs:
           grep -q '^VERIFICATIONFORGE_CHECK=go:placeholders language=Go status=PASS$' <<<"${output}"
           grep -q '^VERIFICATIONFORGE_CHECK=native-authenticity:placeholders language=repository status=PASS$' <<<"${output}"
           test "$(grep -c '^VERIFICATIONFORGE_LANGUAGE=Go adapter=go ' <<<"${output}")" -eq 1
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+          test "${status}" -eq 0
+      - name: Verify a real JavaScript fixture through native adapter
+        shell: bash
+        run: |
+          fixture="${RUNNER_TEMP}/verificationforge-javascript-fixture"
+          mkdir -p "${fixture}/src" "${fixture}/test"
+          cat > "${fixture}/package.json" <<'JSON'
+          {
+            "name": "verificationforge-javascript-fixture",
+            "private": true,
+            "scripts": {
+              "build": "node --check src/add.js",
+              "lint": "node --check src/add.js",
+              "test": "node --test test/add.test.js"
+            }
+          }
+          JSON
+          cat > "${fixture}/src/add.js" <<'JS'
+          function add(left, right) {
+            return left + right;
+          }
+
+          module.exports = { add };
+          JS
+          cat > "${fixture}/test/add.test.js" <<'JS'
+          const test = require('node:test');
+          const assert = require('node:assert/strict');
+          const { add } = require('../src/add.js');
+
+          test('adds two values', () => {
+            assert.equal(add(2, 3), 5);
+          });
+          JS
+          set +e
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=JavaScript adapter=javascript confidence=100%$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=javascript:build language=JavaScript status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=javascript:type-check language=JavaScript status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=javascript:lint language=JavaScript status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=javascript:test language=JavaScript status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=javascript:placeholders language=JavaScript status=PASS$' <<<"${output}"
+          test "$(grep -c '^VERIFICATIONFORGE_LANGUAGE=JavaScript adapter=javascript ' <<<"${output}")" -eq 1
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+          test "${status}" -eq 0
+      - name: Verify a real TypeScript fixture through native adapter
+        shell: bash
+        run: |
+          fixture="${RUNNER_TEMP}/verificationforge-typescript-fixture"
+          tsout="${RUNNER_TEMP}/verificationforge-typescript-out"
+          mkdir -p "${fixture}/src" "${fixture}/test"
+          cat > "${fixture}/package.json" <<JSON
+          {
+            "name": "verificationforge-typescript-fixture",
+            "private": true,
+            "scripts": {
+              "build": "tsc -p tsconfig.json --noEmit",
+              "lint": "tsc -p tsconfig.json --noEmit",
+              "test": "rm -rf ${tsout} && tsc -p tsconfig.json --outDir ${tsout} && node ${tsout}/test/add.test.js"
+            }
+          }
+          JSON
+          cat > "${fixture}/tsconfig.json" <<'JSON'
+          {
+            "compilerOptions": {
+              "target": "ES2022",
+              "module": "CommonJS",
+              "moduleResolution": "Node",
+              "rootDir": ".",
+              "strict": true
+            },
+            "include": ["src/**/*.ts", "test/**/*.ts"]
+          }
+          JSON
+          cat > "${fixture}/src/add.ts" <<'TS'
+          export function add(left: number, right: number): number {
+            return left + right;
+          }
+          TS
+          cat > "${fixture}/test/add.test.ts" <<'TS'
+          import { add } from '../src/add';
+
+          if (add(2, 3) !== 5) {
+            throw new Error('add failed');
+          }
+          TS
+          set +e
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=TypeScript adapter=typescript confidence=100%$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=typescript:build language=TypeScript status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=typescript:type-check language=TypeScript status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=typescript:lint language=TypeScript status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=typescript:test language=TypeScript status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=typescript:placeholders language=TypeScript status=PASS$' <<<"${output}"
+          test "$(grep -c '^VERIFICATIONFORGE_LANGUAGE=TypeScript adapter=typescript ' <<<"${output}")" -eq 1
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+          test "${status}" -eq 0
+      - name: Verify a real C fixture through native adapter
+        shell: bash
+        run: |
+          fixture="${RUNNER_TEMP}/verificationforge-c-fixture"
+          mkdir -p "${fixture}/src" "${fixture}/tests"
+          cat > "${fixture}/src/add.h" <<'C'
+          #ifndef VF_ADD_H
+          #define VF_ADD_H
+          int add(int left, int right);
+          #endif
+          C
+          cat > "${fixture}/src/add.c" <<'C'
+          #include "add.h"
+
+          int add(int left, int right) {
+              return left + right;
+          }
+          C
+          cat > "${fixture}/tests/test_add.c" <<'C'
+          #include "../src/add.h"
+
+          int main(void) {
+              return add(2, 3) == 5 ? 0 : 1;
+          }
+          C
+          set +e
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=C adapter=c confidence=90%$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=c:build language=C status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=c:type-check language=C status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=c:lint language=C status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=c:test language=C status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=c:placeholders language=C status=PASS$' <<<"${output}"
+          test "$(grep -c '^VERIFICATIONFORGE_LANGUAGE=C adapter=c ' <<<"${output}")" -eq 1
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+          test "${status}" -eq 0
+      - name: Verify a real C++ fixture through native adapter
+        shell: bash
+        run: |
+          fixture="${RUNNER_TEMP}/verificationforge-cpp-fixture"
+          mkdir -p "${fixture}/src" "${fixture}/tests"
+          cat > "${fixture}/src/add.hpp" <<'CPP'
+          #ifndef VF_ADD_HPP
+          #define VF_ADD_HPP
+          int add(int left, int right);
+          #endif
+          CPP
+          cat > "${fixture}/src/add.cpp" <<'CPP'
+          #include "add.hpp"
+
+          int add(int left, int right) {
+              return left + right;
+          }
+          CPP
+          cat > "${fixture}/tests/test_add.cpp" <<'CPP'
+          #include "../src/add.hpp"
+
+          int main() {
+              return add(2, 3) == 5 ? 0 : 1;
+          }
+          CPP
+          set +e
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=C++ adapter=cpp confidence=90%$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=cpp:build language=C++ status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=cpp:type-check language=C++ status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=cpp:lint language=C++ status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=cpp:test language=C++ status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=cpp:placeholders language=C++ status=PASS$' <<<"${output}"
+          test "$(grep -c '^VERIFICATIONFORGE_LANGUAGE=C++ adapter=cpp ' <<<"${output}")" -eq 1
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+          test "${status}" -eq 0
+      - name: Verify a real C# fixture through native adapter
+        shell: bash
+        run: |
+          fixture="${RUNNER_TEMP}/verificationforge-csharp-fixture"
+          mkdir -p "${fixture}/tests/App.Tests"
+          cat > "${fixture}/App.csproj" <<'XML'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <TargetFramework>net8.0</TargetFramework>
+              <Nullable>enable</Nullable>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+            </PropertyGroup>
+            <ItemGroup>
+              <Compile Include="Adder.cs" />
+            </ItemGroup>
+          </Project>
+          XML
+          cat > "${fixture}/Adder.cs" <<'CS'
+          namespace VerificationForgeFixture;
+
+          public static class Adder
+          {
+              public static int Add(int left, int right) => left + right;
+          }
+          CS
+          cat > "${fixture}/tests/App.Tests/App.Tests.csproj" <<'XML'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net8.0</TargetFramework>
+              <Nullable>enable</Nullable>
+              <ImplicitUsings>enable</ImplicitUsings>
+            </PropertyGroup>
+            <ItemGroup>
+              <ProjectReference Include="../../App.csproj" />
+            </ItemGroup>
+          </Project>
+          XML
+          cat > "${fixture}/tests/App.Tests/Program.cs" <<'CS'
+          using VerificationForgeFixture;
+
+          return Adder.Add(2, 3) == 5 ? 0 : 1;
+          CS
+          set +e
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=C# adapter=csharp confidence=100%$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=csharp:build language=C# status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=csharp:type-check language=C# status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=csharp:lint language=C# status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=csharp:test language=C# status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=csharp:placeholders language=C# status=PASS$' <<<"${output}"
+          test "$(grep -c '^VERIFICATIONFORGE_LANGUAGE=C# adapter=csharp ' <<<"${output}")" -eq 1
           grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
           grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
           test "${status}" -eq 0
