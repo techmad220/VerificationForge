@@ -37,7 +37,10 @@ impl ReviewRegistry {
     }
 
     pub fn reviewer_ids(&self) -> Vec<&'static str> {
-        self.reviewers.iter().map(|reviewer| reviewer.id()).collect()
+        self.reviewers
+            .iter()
+            .map(|reviewer| reviewer.id())
+            .collect()
     }
 
     pub fn review_requirement(&self, specification: &RequirementSpec) -> Vec<ReviewedObligation> {
@@ -186,7 +189,10 @@ mod tests {
             "duplicate-reviewer"
         }
 
-        fn review_requirement(&self, _specification: &RequirementSpec) -> Vec<AdversarialChallenge> {
+        fn review_requirement(
+            &self,
+            _specification: &RequirementSpec,
+        ) -> Vec<AdversarialChallenge> {
             let challenge = AdversarialChallenge::new(
                 ObligationKind::Security,
                 "attempt authorization bypass",
@@ -273,11 +279,15 @@ mod tests {
         let mut second = specification();
         second.id = RequirementId("REQ-SECOND".into());
         let reviewed = registry.review_requirements([&first, &second]);
-        assert!(reviewed.iter().any(|item| {
-            item.obligation.requirement == RequirementId("REQ-REVIEW".into())
-        }));
-        assert!(reviewed.iter().any(|item| {
-            item.obligation.requirement == RequirementId("REQ-SECOND".into())
-        }));
+        assert!(
+            reviewed
+                .iter()
+                .any(|item| { item.obligation.requirement == RequirementId("REQ-REVIEW".into()) })
+        );
+        assert!(
+            reviewed
+                .iter()
+                .any(|item| { item.obligation.requirement == RequirementId("REQ-SECOND".into()) })
+        );
     }
 }
