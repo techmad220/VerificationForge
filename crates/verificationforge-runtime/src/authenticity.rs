@@ -135,8 +135,8 @@ fn scan_semantic_fakes(repo: &Path, path: &Path, content: &str, findings: &mut V
     match extension(path).as_str() {
         "py" | "pyi" => scan_python(repo, path, content, findings),
         "rb" => scan_ruby(repo, path, content, findings),
-        "rs" | "go" | "js" | "jsx" | "ts" | "tsx" | "java" | "kt" | "kts" | "cs"
-        | "swift" | "php" | "c" | "h" | "cc" | "cpp" | "cxx" | "hpp" | "hh" => {
+        "rs" | "go" | "js" | "jsx" | "ts" | "tsx" | "java" | "kt" | "kts" | "cs" | "swift"
+        | "php" | "c" | "h" | "cc" | "cpp" | "cxx" | "hpp" | "hh" => {
             scan_braced(repo, path, content, findings)
         }
         _ => {}
@@ -659,10 +659,12 @@ mod tests {
         );
         let result = scan_file("marker", "service.py", &source);
         assert_eq!(result.status, CheckStatus::Fail);
-        assert!(result
-            .findings
-            .iter()
-            .any(|finding| finding.code == "VF_CRITICAL_PLACEHOLDER"));
+        assert!(
+            result
+                .findings
+                .iter()
+                .any(|finding| finding.code == "VF_CRITICAL_PLACEHOLDER")
+        );
     }
 
     #[test]
@@ -680,10 +682,12 @@ mod tests {
             "def authorize(user):\n    return True\n",
         );
         assert_eq!(auth_result.status, CheckStatus::Fail);
-        assert!(auth_result
-            .findings
-            .iter()
-            .any(|finding| finding.code == "VF_CRITICAL_FAKE_IMPLEMENTATION"));
+        assert!(
+            auth_result
+                .findings
+                .iter()
+                .any(|finding| finding.code == "VF_CRITICAL_FAKE_IMPLEMENTATION")
+        );
     }
 
     #[test]
