@@ -25,76 +25,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path("crates/verificationforge-adapter-web-family/src/lib.rs")
-          text = path.read_text()
-          old = '''    if repo.join("node_modules").is_dir() {
-              if let Some(manager) = package_manager(execution, repo) {
-                  let args = match manager {
-                      "npm" => vec!["ls".into(), "--all".into(), "--omit=optional".into()],
-                      "pnpm" => vec!["list".into(), "--depth".into(), "Infinity".into()],
-                      "yarn" => vec!["list".into(), "--json".into()],
-                      "bun" => vec!["pm".into(), "ls".into()],
-                      _ => Vec::new(),
-                  };
-                  return run_specialist_command(
-                      repo,
-                      execution,
-                      "dependencies",
-                      manager,
-                      args,
-                      inventory,
-                  );
-              }
-          }
-          '''
-          old = old.replace("              ", "        ", 1)
-          # Match the source exactly using a simpler direct slice.
-          old = '''    if repo.join("node_modules").is_dir() {
-        if let Some(manager) = package_manager(execution, repo) {
-            let args = match manager {
-                "npm" => vec!["ls".into(), "--all".into(), "--omit=optional".into()],
-                "pnpm" => vec!["list".into(), "--depth".into(), "Infinity".into()],
-                "yarn" => vec!["list".into(), "--json".into()],
-                "bun" => vec!["pm".into(), "ls".into()],
-                _ => Vec::new(),
-            };
-            return run_specialist_command(
-                repo,
-                execution,
-                "dependencies",
-                manager,
-                args,
-                inventory,
-            );
-        }
-    }
-'''
-          new = '''    if repo.join("node_modules").is_dir()
-        && let Some(manager) = package_manager(execution, repo)
-    {
-        let args = match manager {
-            "npm" => vec!["ls".into(), "--all".into(), "--omit=optional".into()],
-            "pnpm" => vec!["list".into(), "--depth".into(), "Infinity".into()],
-            "yarn" => vec!["list".into(), "--json".into()],
-            "bun" => vec!["pm".into(), "ls".into()],
-            _ => Vec::new(),
-        };
-        return run_specialist_command(
-            repo,
-            execution,
-            "dependencies",
-            manager,
-            args,
-            inventory,
-        );
-    }
-'''
-          if old not in text:
-              raise SystemExit("expected dependency inventory block not found")
-          path.write_text(text.replace(old, new, 1))
-          PY
+          python3 -c 'from pathlib import Path; p=Path("crates/verificationforge-adapter-web-family/src/lib.rs"); s=p.read_text(); old="    if repo.join(\"node_modules\").is_dir() {\n        if let Some(manager) = package_manager(execution, repo) {\n"; new="    if repo.join(\"node_modules\").is_dir()\n        && let Some(manager) = package_manager(execution, repo)\n    {\n"; assert old in s; s=s.replace(old,new,1); old_close="        }\n    }\n    let manifest_count = ["; assert old_close in s; s=s.replace(old_close,"    }\n    let manifest_count = [",1); p.write_text(s)'
           cargo generate-lockfile
           cargo fmt --all
           cargo check --workspace --all-targets --locked
