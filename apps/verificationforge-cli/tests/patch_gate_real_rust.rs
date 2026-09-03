@@ -141,11 +141,13 @@ fn real_rust_patch_gate_accepts_clean_impact_targeted_patch() {
         .iter()
         .find(|entry| entry.phase == PatchGatePhase::TargetedTests)
         .expect("targeted test entry");
-    assert!(targeted
-        .result
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("patch-fixture")));
+    assert!(
+        targeted
+            .result
+            .findings
+            .iter()
+            .any(|finding| finding.message.contains("patch-fixture"))
+    );
 
     fs::remove_dir_all(root).ok();
 }
