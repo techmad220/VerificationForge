@@ -7,6 +7,8 @@ pub use agent::*;
 mod authenticity;
 mod certification;
 pub use certification::*;
+mod certification_gate;
+pub use certification_gate::*;
 mod checkpoint_gate;
 pub use checkpoint_gate::*;
 mod commit_gate;
