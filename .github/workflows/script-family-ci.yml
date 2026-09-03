@@ -1,0 +1,196 @@
+name: Script Family CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-script-family:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pinned ShellCheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/shellcheck.tar.xz"
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz" -o "${archive}"
+          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  ${archive}" | sha256sum -c -
+          tar -xJf "${archive}" -C "${RUNNER_TEMP}"
+          sudo install -m 0755 "${RUNNER_TEMP}/shellcheck-v0.11.0/shellcheck" /usr/local/bin/shellcheck
+
+      - name: Install pinned PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Scope CurrentUser -Force
+          Import-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Force
+          (Get-Module PSScriptAnalyzer).Version.ToString()
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          tools: composer
+          coverage: none
+
+      - name: Verify native script toolchains
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash --version | head -n 1
+          shellcheck --version
+          pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
+          pwsh -NoProfile -Command 'Import-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Force; (Get-Module PSScriptAnalyzer).Version.ToString()'
+          php --version | head -n 1
+          composer --version
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Verify Rust workspace quality
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --workspace --all-targets --locked
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace --all-targets --locked
+
+      - name: Verify real Bash fixture through native adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="${RUNNER_TEMP}/verificationforge-bash-fixture"
+          mkdir -p "${fixture}/src" "${fixture}/tests"
+          cat > "${fixture}/src/add.sh" <<'BASH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          add_numbers() {
+            printf '%s\n' "$(( $1 + $2 ))"
+          }
+
+          if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+            add_numbers "$1" "$2"
+          fi
+          BASH
+          cat > "${fixture}/tests/add_test.sh" <<'BASH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          actual="$(bash src/add.sh 2 3)"
+          if [[ "${actual}" != "5" ]]; then
+            printf 'expected 5, got %s\n' "${actual}" >&2
+            exit 1
+          fi
+          BASH
+          chmod +x "${fixture}/src/add.sh" "${fixture}/tests/add_test.sh"
+          set +e
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=Bash adapter=bash confidence=90%$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=bash:build language=Bash status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=bash:type-check language=Bash status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=bash:lint language=Bash status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=bash:test language=Bash status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=bash:placeholders language=Bash status=PASS$' <<<"${output}"
+          test "$(grep -c '^VERIFICATIONFORGE_LANGUAGE=Bash adapter=bash ' <<<"${output}")" -eq 1
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+          test "${status}" -eq 0
+
+      - name: Verify real PowerShell fixture through native adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="${RUNNER_TEMP}/verificationforge-powershell-fixture"
+          mkdir -p "${fixture}/src" "${fixture}/tests"
+          cat > "${fixture}/src/Get-Sum.ps1" <<'POWERSHELL'
+          function Get-Sum {
+              [CmdletBinding()]
+              param(
+                  [Parameter(Mandatory)]
+                  [int]$Left,
+                  [Parameter(Mandatory)]
+                  [int]$Right
+              )
+
+              return $Left + $Right
+          }
+          POWERSHELL
+          cat > "${fixture}/tests/Get-Sum.Tests.ps1" <<'POWERSHELL'
+          . "$PSScriptRoot/../src/Get-Sum.ps1"
+
+          $actual = Get-Sum -Left 2 -Right 3
+          if ($actual -ne 5) {
+              throw "Expected 5, got $actual"
+          }
+          POWERSHELL
+          set +e
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=PowerShell adapter=powershell confidence=90%$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=powershell:build language=PowerShell status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=powershell:type-check language=PowerShell status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=powershell:lint language=PowerShell status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=powershell:test language=PowerShell status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=powershell:placeholders language=PowerShell status=PASS$' <<<"${output}"
+          test "$(grep -c '^VERIFICATIONFORGE_LANGUAGE=PowerShell adapter=powershell ' <<<"${output}")" -eq 1
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+          test "${status}" -eq 0
+
+      - name: Verify real PHP fixture through native adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="${RUNNER_TEMP}/verificationforge-php-fixture"
+          mkdir -p "${fixture}/src" "${fixture}/tests"
+          cat > "${fixture}/src/Adder.php" <<'PHP'
+          <?php
+          declare(strict_types=1);
+
+          function addNumbers(int $left, int $right): int
+          {
+              return $left + $right;
+          }
+          PHP
+          cat > "${fixture}/tests/AdderTest.php" <<'PHP'
+          <?php
+          declare(strict_types=1);
+
+          require __DIR__ . '/../src/Adder.php';
+
+          $actual = addNumbers(2, 3);
+          if ($actual !== 5) {
+              fwrite(STDERR, "Expected 5, got {$actual}\n");
+              exit(1);
+          }
+          PHP
+          set +e
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=PHP adapter=php confidence=90%$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=php:build language=PHP status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=php:type-check language=PHP status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=php:lint language=PHP status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=php:test language=PHP status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=php:placeholders language=PHP status=PASS$' <<<"${output}"
+          test "$(grep -c '^VERIFICATIONFORGE_LANGUAGE=PHP adapter=php ' <<<"${output}")" -eq 1
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+          test "${status}" -eq 0
