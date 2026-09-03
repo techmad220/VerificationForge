@@ -141,15 +141,14 @@ impl ProjectInventory {
                 inventory.database_technologies.insert("Migrations".into());
             }
 
-            if matches!(extension.as_str(), "yaml" | "yml") {
-                if let Ok(content) = fs::read_to_string(path)
-                    && content.contains("apiVersion:")
-                    && content.contains("kind:")
-                {
-                    inventory
-                        .infrastructure_technologies
-                        .insert("Kubernetes".into());
-                }
+            if matches!(extension.as_str(), "yaml" | "yml")
+                && let Ok(content) = fs::read_to_string(path)
+                && content.contains("apiVersion:")
+                && content.contains("kind:")
+            {
+                inventory
+                    .infrastructure_technologies
+                    .insert("Kubernetes".into());
             }
         }
 
