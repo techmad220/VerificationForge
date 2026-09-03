@@ -1,0 +1,9 @@
+[package]
+name = "verificationforge-adapter-assembly"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+verificationforge-core = { path = "../verificationforge-core" }
