@@ -6,14 +6,14 @@ use std::sync::Arc;
 use verificationforge_adapter_python::PythonAdapter;
 use verificationforge_adapter_rust::RustAdapter;
 use verificationforge_runtime::{
-    AdapterRegistry, CheckStatus, ProcessExecutionAdapter, RiskTier, VerificationEngine,
-    VerificationLevel, VerificationPolicy, VerificationSession,
+    AdapterRegistry, CheckStatus, ProcessExecutionAdapter, RepositoryConfig, RiskTier,
+    VerificationEngine, VerificationLevel, VerificationSession,
 };
 
 struct CliConfig {
     path: PathBuf,
     level: VerificationLevel,
-    risk: RiskTier,
+    risk: Option<RiskTier>,
     journal_dir: Option<PathBuf>,
     certification_json: Option<PathBuf>,
 }
@@ -39,12 +39,17 @@ fn run() -> Result<bool, String> {
         return Err(format!("{} is not a directory", canonical.display()));
     }
 
+    let mut repository_config = RepositoryConfig::load(&canonical)?;
+    if let Some(risk) = config.risk {
+        repository_config.risk = Some(risk);
+    }
+    let policy = repository_config.policy(default_risk(config.level));
+
     let mut registry = AdapterRegistry::default();
     registry.register(Arc::new(RustAdapter));
     registry.register(Arc::new(PythonAdapter));
 
     let engine = VerificationEngine::new(registry, Arc::new(ProcessExecutionAdapter));
-    let policy = VerificationPolicy::for_risk(config.risk);
     let session = match &config.journal_dir {
         Some(root) => {
             VerificationSession::run_journaled(&engine, &canonical, config.level, &policy, root)?
@@ -75,7 +80,11 @@ fn run() -> Result<bool, String> {
 
     println!("VERIFICATIONFORGE_PROJECT={}", canonical.display());
     println!("VERIFICATIONFORGE_LEVEL={:?}", config.level);
-    println!("VERIFICATIONFORGE_RISK={:?}", config.risk);
+    println!("VERIFICATIONFORGE_RISK={:?}", policy.risk);
+    println!(
+        "VERIFICATIONFORGE_POLICY_MINIMUM_LEVEL={:?}",
+        policy.minimum_level
+    );
     if let Some(address) = &session.snapshot.address {
         println!("VERIFICATIONFORGE_REPOSITORY_ADDRESS={}", address.0);
     }
@@ -115,6 +124,14 @@ fn run() -> Result<bool, String> {
     println!(
         "VERIFICATIONFORGE_UNSUPPORTED_CHECKS={}",
         report.unsupported_checks()
+    );
+    println!(
+        "VERIFICATIONFORGE_EVIDENCE_BACKED_PASSES={}",
+        session.certification.evidence_backed_passes
+    );
+    println!(
+        "VERIFICATIONFORGE_BARE_PASSES={}",
+        session.certification.bare_passes
     );
     println!(
         "VERIFICATIONFORGE_CERTIFICATION_ID={}",
@@ -204,7 +221,6 @@ fn parse_args() -> Result<CliConfig, String> {
         path = Some(PathBuf::from(arg));
     }
 
-    let risk = risk.unwrap_or_else(|| default_risk(level));
     Ok(CliConfig {
         path: path.unwrap_or_else(|| PathBuf::from(".")),
         level,
