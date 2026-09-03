@@ -51,46 +51,39 @@ impl RepositorySnapshot {
             files.insert(relative, ContentAddress::from_bytes(&bytes));
             Ok(())
         })?;
-
         let mut canonical = Vec::new();
         for (path, address) in &files {
             canonical.extend_from_slice(&(path.len() as u64).to_le_bytes());
             canonical.extend_from_slice(path.as_bytes());
             canonical.extend_from_slice(address.0.as_bytes());
         }
-        let address = Some(ContentAddress::from_bytes(&canonical));
-        Ok(Self { files, address })
+        Ok(Self {
+            files,
+            address: Some(ContentAddress::from_bytes(&canonical)),
+        })
     }
 
     pub fn diff(&self, newer: &Self) -> SnapshotDiff {
-        let mut changed = BTreeSet::new();
-        let mut added = BTreeSet::new();
-        let mut removed = BTreeSet::new();
-
+        let mut result = SnapshotDiff::default();
         for (path, address) in &newer.files {
             match self.files.get(path) {
                 None => {
-                    added.insert(path.clone());
-                    changed.insert(path.clone());
+                    result.added.insert(path.clone());
+                    result.changed.insert(path.clone());
                 }
                 Some(previous) if previous != address => {
-                    changed.insert(path.clone());
+                    result.changed.insert(path.clone());
                 }
                 Some(_) => {}
             }
         }
         for path in self.files.keys() {
             if !newer.files.contains_key(path) {
-                removed.insert(path.clone());
-                changed.insert(path.clone());
+                result.removed.insert(path.clone());
+                result.changed.insert(path.clone());
             }
         }
-
-        SnapshotDiff {
-            changed,
-            added,
-            removed,
-        }
+        result
     }
 }
 
@@ -121,7 +114,6 @@ pub fn plan_impact(diff: &SnapshotDiff, graph: &UniversalCodeGraph) -> ImpactPla
         .iter()
         .any(|path| !mapped_paths.contains(path));
     let affected_symbols = graph.dependency_cone(seed_symbols.iter().cloned());
-
     ImpactPlan {
         changed_paths,
         seed_symbols,
@@ -142,12 +134,11 @@ impl CacheKey {
         policy_version: u64,
     ) -> Self {
         let level_text = format!("{level:?}");
-        let check_text = check.as_str();
         let policy_text = policy_version.to_string();
         Self(ContentAddress::combine([
             snapshot.0.as_bytes(),
             adapter_id.as_bytes(),
-            check_text.as_bytes(),
+            check.as_str().as_bytes(),
             level_text.as_bytes(),
             policy_text.as_bytes(),
         ]))
@@ -220,14 +211,6 @@ pub struct ResourceRequest {
     pub gpu_mb: u64,
 }
 
-impl ResourceRequest {
-    pub fn fits_within(self, budget: ResourceBudget) -> bool {
-        self.cpu_slots <= budget.cpu_slots
-            && self.memory_mb <= budget.memory_mb
-            && self.gpu_mb <= budget.gpu_mb
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ResourceBudget {
     pub cpu_slots: u16,
@@ -236,6 +219,12 @@ pub struct ResourceBudget {
 }
 
 impl ResourceBudget {
+    fn fits(self, request: ResourceRequest) -> bool {
+        request.cpu_slots <= self.cpu_slots
+            && request.memory_mb <= self.memory_mb
+            && request.gpu_mb <= self.gpu_mb
+    }
+
     fn can_add(self, used: ResourceRequest, request: ResourceRequest) -> bool {
         used.cpu_slots.saturating_add(request.cpu_slots) <= self.cpu_slots
             && used.memory_mb.saturating_add(request.memory_mb) <= self.memory_mb
@@ -263,14 +252,17 @@ pub fn schedule_tasks(
 ) -> Result<Vec<ScheduleBatch>, String> {
     let mut batches = Vec::<ScheduleBatch>::new();
     for task in tasks {
-        if !task.resources.fits_within(budget) {
-            return Err(format!("task {} exceeds scheduler resource budget", task.id));
+        if !budget.fits(task.resources) {
+            return Err(format!(
+                "task {} exceeds scheduler resource budget",
+                task.id
+            ));
         }
-        let mut task = Some(task);
+        let mut pending = Some(task);
         for batch in &mut batches {
-            let candidate = task.as_ref().expect("task exists until scheduled");
+            let candidate = pending.as_ref().expect("task exists until scheduled");
             if budget.can_add(batch.resources, candidate.resources) {
-                let candidate = task.take().expect("task exists until scheduled");
+                let candidate = pending.take().expect("task exists until scheduled");
                 batch.resources.cpu_slots += candidate.resources.cpu_slots;
                 batch.resources.memory_mb += candidate.resources.memory_mb;
                 batch.resources.gpu_mb += candidate.resources.gpu_mb;
@@ -278,7 +270,7 @@ pub fn schedule_tasks(
                 break;
             }
         }
-        if let Some(candidate) = task {
+        if let Some(candidate) = pending {
             batches.push(ScheduleBatch {
                 resources: candidate.resources,
                 tasks: vec![candidate],
@@ -322,7 +314,10 @@ impl RunJournal {
 
     pub fn append(&mut self, kind: JournalEventKind, message: &str) -> Result<(), String> {
         let timestamp = now_ms();
-        if matches!(kind, JournalEventKind::Heartbeat | JournalEventKind::Progress) {
+        if matches!(
+            kind,
+            JournalEventKind::Heartbeat | JournalEventKind::Progress
+        ) {
             self.last_heartbeat_ms = timestamp;
         }
         let mut file = fs::OpenOptions::new()
@@ -344,8 +339,8 @@ impl RunJournal {
         self.append(JournalEventKind::Heartbeat, message)
     }
 
-    pub fn stalled(&self, now_ms: u128, timeout_ms: u128) -> bool {
-        now_ms.saturating_sub(self.last_heartbeat_ms) > timeout_ms
+    pub fn stalled(&self, current_ms: u128, timeout_ms: u128) -> bool {
+        current_ms.saturating_sub(self.last_heartbeat_ms) > timeout_ms
     }
 
     pub fn path(&self) -> &Path {
@@ -358,14 +353,16 @@ where
     F: FnMut(String, &Path) -> Result<(), String>,
 {
     if depth > 64 {
-        return Err(format!("repository traversal exceeded depth at {}", path.display()));
+        return Err(format!(
+            "repository traversal exceeded depth at {}",
+            path.display()
+        ));
     }
     let mut entries = fs::read_dir(path)
         .map_err(|error| format!("cannot read directory {}: {error}", path.display()))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("cannot enumerate directory {}: {error}", path.display()))?;
     entries.sort_by_key(fs::DirEntry::file_name);
-
     for entry in entries {
         let file_type = entry
             .file_type()
@@ -403,7 +400,11 @@ fn encode_result(result: &CheckResult) -> String {
         CheckStatus::Skipped => "skipped",
         CheckStatus::Unsupported => "unsupported",
     };
-    let mut output = format!("{status}\n{}\n{}\n", hex_encode(result.check.as_bytes()), result.findings.len());
+    let mut output = format!(
+        "{status}\n{}\n{}\n",
+        hex_encode(result.check.as_bytes()),
+        result.findings.len()
+    );
     for finding in &result.findings {
         output.push_str(&format!(
             "{}\t{}\t{}\n",
@@ -417,17 +418,21 @@ fn encode_result(result: &CheckResult) -> String {
 
 fn decode_result(content: &str) -> Result<CheckResult, String> {
     let mut lines = content.lines();
-    let status = match lines.next().ok_or_else(|| "cache missing status".to_owned())? {
+    let status = match lines
+        .next()
+        .ok_or_else(|| "cache missing status".to_owned())?
+    {
         "pass" => CheckStatus::Pass,
         "fail" => CheckStatus::Fail,
         "skipped" => CheckStatus::Skipped,
         "unsupported" => CheckStatus::Unsupported,
         other => return Err(format!("unknown cached status {other}")),
     };
-    let check = String::from_utf8(hex_decode(
-        lines.next().ok_or_else(|| "cache missing check".to_owned())?,
-    )?)
-    .map_err(|error| format!("cached check is not utf-8: {error}"))?;
+    let check = decode_text(
+        lines
+            .next()
+            .ok_or_else(|| "cache missing check".to_owned())?,
+    )?;
     let count = lines
         .next()
         .ok_or_else(|| "cache missing finding count".to_owned())?
@@ -439,7 +444,11 @@ fn decode_result(content: &str) -> Result<CheckResult, String> {
             .next()
             .ok_or_else(|| "cache missing finding row".to_owned())?;
         let mut parts = line.splitn(3, '\t');
-        let code = decode_text(parts.next().ok_or_else(|| "cache missing finding code".to_owned())?)?;
+        let code = decode_text(
+            parts
+                .next()
+                .ok_or_else(|| "cache missing finding code".to_owned())?,
+        )?;
         let blocking = match parts
             .next()
             .ok_or_else(|| "cache missing finding blocking flag".to_owned())?
@@ -482,7 +491,7 @@ fn hex_encode(bytes: &[u8]) -> String {
 }
 
 fn hex_decode(value: &str) -> Result<Vec<u8>, String> {
-    if !value.len().is_multiple_of(2) {
+    if value.len() % 2 != 0 {
         return Err("hex value has odd length".into());
     }
     value
@@ -530,9 +539,11 @@ mod tests {
     fn snapshot_diff_and_impact_are_content_addressed() {
         let root = temp_dir("snapshot");
         fs::create_dir_all(root.join("src")).expect("create directory");
-        fs::write(root.join("src/lib.rs"), "pub fn value() -> u8 { 1 }").expect("write source");
+        fs::write(root.join("src/lib.rs"), "pub fn value() -> u8 { 1 }")
+            .expect("write source");
         let first = RepositorySnapshot::capture(&root).expect("capture first");
-        fs::write(root.join("src/lib.rs"), "pub fn value() -> u8 { 2 }").expect("update source");
+        fs::write(root.join("src/lib.rs"), "pub fn value() -> u8 { 2 }")
+            .expect("update source");
         let second = RepositorySnapshot::capture(&root).expect("capture second");
         assert_ne!(first.address, second.address);
         let diff = first.diff(&second);
@@ -548,7 +559,10 @@ mod tests {
         });
         let plan = plan_impact(&diff, &graph);
         assert!(!plan.requires_full_verification);
-        assert!(plan.affected_symbols.contains(&SymbolId("crate::value".into())));
+        assert!(
+            plan.affected_symbols
+                .contains(&SymbolId("crate::value".into()))
+        );
         fs::remove_dir_all(root).ok();
     }
 

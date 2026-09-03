@@ -54,55 +54,62 @@ impl RequirementSpec {
     }
 
     pub fn obligations(&self) -> Vec<VerificationObligation> {
-        let mut obligations = vec![VerificationObligation {
+        let mut output = vec![VerificationObligation {
             requirement: self.id.clone(),
             kind: ObligationKind::Functional,
             statement: self.description.clone(),
         }];
-        obligations.extend(self.preconditions.iter().cloned().map(|statement| {
-            VerificationObligation {
-                requirement: self.id.clone(),
-                kind: ObligationKind::Precondition,
-                statement,
-            }
-        }));
-        obligations.extend(self.postconditions.iter().cloned().map(|statement| {
-            VerificationObligation {
-                requirement: self.id.clone(),
-                kind: ObligationKind::Postcondition,
-                statement,
-            }
-        }));
-        obligations.extend(self.invariants.iter().cloned().map(|statement| {
-            VerificationObligation {
-                requirement: self.id.clone(),
-                kind: ObligationKind::Invariant,
-                statement,
-            }
-        }));
-        obligations.extend(self.error_behaviors.iter().cloned().map(|statement| {
-            VerificationObligation {
-                requirement: self.id.clone(),
-                kind: ObligationKind::ErrorBehavior,
-                statement,
-            }
-        }));
-        obligations.extend(self.security_rules.iter().cloned().map(|statement| {
-            VerificationObligation {
-                requirement: self.id.clone(),
-                kind: ObligationKind::Security,
-                statement,
-            }
-        }));
-        obligations.extend(self.performance_rules.iter().cloned().map(|statement| {
-            VerificationObligation {
-                requirement: self.id.clone(),
-                kind: ObligationKind::Performance,
-                statement,
-            }
-        }));
-        obligations
+        push_obligations(
+            &mut output,
+            &self.id,
+            ObligationKind::Precondition,
+            &self.preconditions,
+        );
+        push_obligations(
+            &mut output,
+            &self.id,
+            ObligationKind::Postcondition,
+            &self.postconditions,
+        );
+        push_obligations(
+            &mut output,
+            &self.id,
+            ObligationKind::Invariant,
+            &self.invariants,
+        );
+        push_obligations(
+            &mut output,
+            &self.id,
+            ObligationKind::ErrorBehavior,
+            &self.error_behaviors,
+        );
+        push_obligations(
+            &mut output,
+            &self.id,
+            ObligationKind::Security,
+            &self.security_rules,
+        );
+        push_obligations(
+            &mut output,
+            &self.id,
+            ObligationKind::Performance,
+            &self.performance_rules,
+        );
+        output
     }
+}
+
+fn push_obligations(
+    target: &mut Vec<VerificationObligation>,
+    requirement: &RequirementId,
+    kind: ObligationKind,
+    statements: &[String],
+) {
+    target.extend(statements.iter().cloned().map(|statement| VerificationObligation {
+        requirement: requirement.clone(),
+        kind,
+        statement,
+    }));
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -149,12 +156,9 @@ impl StateMachineModel {
         let invalid_transitions = self
             .transitions
             .iter()
-            .filter(|transition| {
-                !self.states.contains(&transition.from) || !self.states.contains(&transition.to)
-            })
+            .filter(|item| !self.states.contains(&item.from) || !self.states.contains(&item.to))
             .cloned()
             .collect::<Vec<_>>();
-
         let mut reachable = BTreeSet::new();
         let mut queue = VecDeque::new();
         if let Some(initial) = &self.initial_state {
@@ -163,7 +167,6 @@ impl StateMachineModel {
                 queue.push_back(initial.clone());
             }
         }
-
         while let Some(state) = queue.pop_front() {
             for transition in self.transitions.iter().filter(|item| item.from == state) {
                 if self.states.contains(&transition.to) && reachable.insert(transition.to.clone()) {
@@ -171,7 +174,6 @@ impl StateMachineModel {
                 }
             }
         }
-
         let unreachable = self
             .states
             .difference(&reachable)
@@ -271,38 +273,18 @@ impl UniversalCodeGraph {
                 queue.push_back(seed);
             }
         }
-
         while let Some(current) = queue.pop_front() {
             for edge in &self.edges {
-                let dependent = match edge.kind {
-                    CodeEdgeKind::Contains
-                    | CodeEdgeKind::Calls
-                    | CodeEdgeKind::Reads
-                    | CodeEdgeKind::Imports
-                    | CodeEdgeKind::DependsOn
-                    | CodeEdgeKind::Implements
-                    | CodeEdgeKind::Exposes
-                    | CodeEdgeKind::Handles
-                    | CodeEdgeKind::Receives
-                    | CodeEdgeKind::SynchronizesWith => {
-                        (edge.to == current).then_some(edge.from.clone())
-                    }
-                    CodeEdgeKind::Writes
-                    | CodeEdgeKind::Sends
-                    | CodeEdgeKind::CrossesBoundary => {
-                        if edge.to == current {
-                            Some(edge.from.clone())
-                        } else if edge.from == current {
-                            Some(edge.to.clone())
-                        } else {
-                            None
-                        }
-                    }
-                };
-                if let Some(symbol) = dependent {
-                    if affected.insert(symbol.clone()) {
-                        queue.push_back(symbol);
-                    }
+                if edge.to == current && affected.insert(edge.from.clone()) {
+                    queue.push_back(edge.from.clone());
+                }
+                if matches!(
+                    edge.kind,
+                    CodeEdgeKind::Writes | CodeEdgeKind::Sends | CodeEdgeKind::CrossesBoundary
+                ) && edge.from == current
+                    && affected.insert(edge.to.clone())
+                {
+                    queue.push_back(edge.to.clone());
                 }
             }
         }
@@ -316,7 +298,11 @@ impl UniversalCodeGraph {
         let paths = paths.into_iter().collect::<BTreeSet<_>>();
         self.nodes
             .values()
-            .filter(|node| node.path.as_deref().is_some_and(|path| paths.contains(path)))
+            .filter(|node| {
+                node.path
+                    .as_deref()
+                    .is_some_and(|path| paths.contains(path))
+            })
             .map(|node| node.id.clone())
             .collect()
     }
@@ -359,7 +345,9 @@ impl EvidenceGraph {
         self.evidence
             .iter()
             .filter(|(_, results)| {
-                !results.iter().any(|result| result.status == CheckStatus::Pass)
+                !results
+                    .iter()
+                    .any(|result| result.status == CheckStatus::Pass)
             })
             .map(|(requirement, _)| requirement.clone())
             .collect()
@@ -384,7 +372,7 @@ pub struct EvidenceLedger {
 
 impl EvidenceLedger {
     pub fn append(&mut self, link: EvidenceLink) -> Result<(), String> {
-        if self.links.iter().any(|existing| existing.id == link.id) {
+        if self.links.iter().any(|item| item.id == link.id) {
             return Err(format!("duplicate evidence id {}", link.id));
         }
         self.links.push(link);
@@ -480,7 +468,6 @@ impl VerificationPolicy {
                 blocking: true,
             });
         }
-
         for result in results {
             if result.status == CheckStatus::Fail || result.has_blocking_finding() {
                 blockers.extend(
@@ -513,18 +500,19 @@ impl VerificationPolicy {
                 });
             }
         }
-
         for required in &self.required_checks {
             let suffix = format!(":{}", required.as_str());
             if !results.iter().any(|result| result.check.ends_with(&suffix)) {
                 blockers.push(Finding {
                     code: "VF_POLICY_MISSING_CHECK".into(),
-                    message: format!("required check {} produced no evidence", required.as_str()),
+                    message: format!(
+                        "required check {} produced no evidence",
+                        required.as_str()
+                    ),
                     blocking: true,
                 });
             }
         }
-
         PolicyDecision {
             accepted: blockers.is_empty(),
             blockers,
@@ -589,7 +577,7 @@ impl OperationLedger {
             accepted,
             evidence_ids,
         });
-        self.operations.last().expect("operation was just appended")
+        self.operations.last().expect("operation was appended")
     }
 }
 
@@ -626,8 +614,10 @@ mod tests {
             RequirementKind::Security,
             "Only authorized principals may access the resource",
         );
-        spec.invariants.push("denied users never receive data".into());
-        spec.security_rules.push("authorization is checked server-side".into());
+        spec.invariants
+            .push("denied users never receive data".into());
+        spec.security_rules
+            .push("authorization is checked server-side".into());
         let obligations = spec.obligations();
         assert_eq!(obligations.len(), 3);
         assert!(

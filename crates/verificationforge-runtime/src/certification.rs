@@ -42,7 +42,6 @@ impl CertificationArtifact {
                 canonical.push(u8::from(finding.blocking));
             }
         }
-
         Self {
             id: ContentAddress::from_bytes(&canonical),
             repository_address,
@@ -138,6 +137,10 @@ mod tests {
         let first = CertificationArtifact::from_report(&report, repository.clone(), &policy);
         let second = CertificationArtifact::from_report(&report, repository, &policy);
         assert_eq!(first.id, second.id);
-        assert!(first.to_json().contains("verificationforge.certification.v1"));
+        assert!(
+            first
+                .to_json()
+                .contains("verificationforge.certification.v1")
+        );
     }
 }
