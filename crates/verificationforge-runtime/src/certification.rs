@@ -41,18 +41,21 @@ impl CertificationArtifact {
             })
             .count();
         let mut blockers = policy_decision.blockers;
-        blockers.extend(results.iter().filter_map(|result| {
-            (result.status == CheckStatus::Pass && !result.has_reproducible_evidence()).then(|| {
-                Finding {
+        blockers.extend(
+            results
+                .iter()
+                .filter(|result| {
+                    result.status == CheckStatus::Pass && !result.has_reproducible_evidence()
+                })
+                .map(|result| Finding {
                     code: "VF_CERT_NO_EVIDENCE".into(),
                     message: format!(
                         "{} returned PASS without reproducible VF_EVIDENCE",
                         result.check
                     ),
                     blocking: true,
-                }
-            })
-        }));
+                }),
+        );
         let accepted = report.accepted && blockers.is_empty();
         let mut canonical = Vec::new();
         canonical.extend_from_slice(repository_address.0.as_bytes());
