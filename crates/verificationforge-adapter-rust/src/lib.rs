@@ -7,6 +7,8 @@ use verificationforge_core::{
     LanguageDetection, SymbolId, run_repository_harness,
 };
 
+mod checkpoint;
+
 pub struct RustAdapter;
 
 impl LanguageAdapter for RustAdapter {
@@ -60,6 +62,42 @@ impl LanguageAdapter for RustAdapter {
         scope: &ImpactScope,
     ) -> CheckResult {
         run_targeted_rust_tests(execution, repo, scope)
+    }
+
+    fn run_integration_tests(
+        &self,
+        repo: &Path,
+        execution: &dyn ExecutionAdapter,
+        scope: &ImpactScope,
+    ) -> CheckResult {
+        checkpoint::run_integration_tests(execution, repo, scope)
+    }
+
+    fn run_property_tests(
+        &self,
+        repo: &Path,
+        execution: &dyn ExecutionAdapter,
+        scope: &ImpactScope,
+    ) -> CheckResult {
+        checkpoint::run_property_tests(execution, repo, scope)
+    }
+
+    fn run_ui_verification(
+        &self,
+        repo: &Path,
+        execution: &dyn ExecutionAdapter,
+        scope: &ImpactScope,
+    ) -> CheckResult {
+        checkpoint::run_ui_verification(execution, repo, scope)
+    }
+
+    fn run_api_verification(
+        &self,
+        repo: &Path,
+        execution: &dyn ExecutionAdapter,
+        scope: &ImpactScope,
+    ) -> CheckResult {
+        checkpoint::run_api_verification(execution, repo, scope)
     }
 
     fn run_check(
