@@ -1,0 +1,41 @@
+name: Fix JVM executable probe
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.head_ref == 'agent/expand-jvm-family'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/expand-jvm-family
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Fix native JVM tool probes and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('crates/verificationforge-adapter-jvm-family/src/lib.rs')
+          text = path.read_text()
+          old = '''fn executable_available(execution: &dyn ExecutionAdapter, repo: &Path, program: &str) -> bool {\n    execution\n        .execute(program, &["--version".into()], repo)\n        .map(|result| result.success())\n        .unwrap_or(false)\n}\n'''
+          new = '''fn executable_available(execution: &dyn ExecutionAdapter, repo: &Path, program: &str) -> bool {\n    let args = match program {\n        "kotlinc" | "javac" | "java" => vec!["-version".into()],\n        _ => vec!["--version".into()],\n    };\n    execution\n        .execute(program, &args, repo)\n        .map(|result| result.success())\n        .unwrap_or(false)\n}\n'''
+          if old not in text:
+              raise SystemExit('expected executable probe not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          cargo fmt --all
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/verificationforge-adapter-jvm-family/src/lib.rs
+          git commit -m "Use native JVM executable version probes"
+          git push origin HEAD:agent/expand-jvm-family
