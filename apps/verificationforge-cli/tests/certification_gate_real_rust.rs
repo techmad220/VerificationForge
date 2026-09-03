@@ -365,7 +365,7 @@ mod tests {
 
 const CERTIFICATION_HARNESS: &str = r#"use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{self, Command};
 
 use cert_fixture::{
@@ -455,7 +455,7 @@ fn main() {
             let iterations = parse_usize(&args[3], "iterations");
             for index in 0..iterations {
                 let value = (index & 0xff) as u8;
-                let inject_failure = index % 2 == 0;
+                let inject_failure = index.is_multiple_of(2);
                 let result = store_value(value, inject_failure);
                 if inject_failure {
                     assert!(result.is_err());
@@ -604,12 +604,12 @@ fn run_sandbox(seed: u64, iterations: usize) {
     fs::remove_file(&outside).ok();
 
     for index in 0..iterations {
-        if index % 4 == 0 {
+        if index.is_multiple_of(4) {
             let relative = PathBuf::from(format!("safe/{index}.txt"));
             sandbox_write(&root, &relative, b"safe").expect("safe sandbox write");
             assert!(root.join(relative).is_file());
         } else {
-            let attack = if index % 2 == 0 {
+            let attack = if index.is_multiple_of(2) {
                 PathBuf::from("../../escape.txt")
             } else {
                 PathBuf::from("../escape.txt")
