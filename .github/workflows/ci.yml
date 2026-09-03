@@ -60,11 +60,11 @@ jobs:
           grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
           grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
           test "${status}" -eq 0
-      - name: Verify a real Go fixture through generic fallback
+      - name: Verify a real Go fixture through native adapter
         shell: bash
         run: |
           fixture="${RUNNER_TEMP}/verificationforge-go-fixture"
-          mkdir -p "${fixture}/.verificationforge"
+          mkdir -p "${fixture}"
           cat > "${fixture}/go.mod" <<'GO'
           module verificationforge.example/go-fixture
 
@@ -94,16 +94,18 @@ jobs:
               }
           }
           GO
-          printf '%s\n' go build ./... > "${fixture}/.verificationforge/go-build.argv"
-          printf '%s\n' go test -run '^$' ./... > "${fixture}/.verificationforge/go-type-check.argv"
-          printf '%s\n' go vet ./... > "${fixture}/.verificationforge/go-lint.argv"
-          printf '%s\n' go test ./... > "${fixture}/.verificationforge/go-test.argv"
           set +e
           output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
           status=$?
           set -e
           printf '%s\n' "${output}"
-          grep -q '^VERIFICATIONFORGE_LANGUAGE=Go adapter=go ' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_LANGUAGE=Go adapter=go confidence=100%$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=go:build language=Go status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=go:type-check language=Go status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=go:lint language=Go status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=go:test language=Go status=PASS$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_CHECK=go:placeholders language=Go status=PASS$' <<<"${output}"
+          test "$(grep -c '^VERIFICATIONFORGE_LANGUAGE=Go adapter=go ' <<<"${output}")" -eq 1
           grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
           grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
           test "${status}" -eq 0
