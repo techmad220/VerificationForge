@@ -1,8 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+
 use verificationforge_core::{
     CheckKind, CheckResult, CheckStatus, ExecutionAdapter, Finding, LanguageAdapter,
-    LanguageDetection,
+    LanguageDetection, run_repository_harness,
 };
 
 pub struct PythonAdapter;
@@ -51,7 +52,12 @@ impl LanguageAdapter for PythonAdapter {
                 } else if executable_available(execution, repo, "pyright") {
                     run_command(execution, repo, check, "pyright", &["."])
                 } else {
-                    CheckResult::unsupported(name(check), "neither mypy nor pyright is available")
+                    optional_repository_harness(
+                        execution,
+                        repo,
+                        check,
+                        "neither mypy nor pyright is available",
+                    )
                 }
             }
             CheckKind::Lint => {
@@ -66,7 +72,7 @@ impl LanguageAdapter for PythonAdapter {
                 } else if executable_available(execution, repo, "ruff") {
                     run_command(execution, repo, check, "ruff", &["check", "."])
                 } else {
-                    CheckResult::unsupported(name(check), "ruff is not available")
+                    optional_repository_harness(execution, repo, check, "ruff is not available")
                 }
             }
             CheckKind::Test => run_tests(execution, repo, &python),
@@ -75,7 +81,7 @@ impl LanguageAdapter for PythonAdapter {
                 if module_available(execution, repo, &python, "mutmut") {
                     run_python(execution, repo, check, &python, &["-m", "mutmut", "run"])
                 } else {
-                    CheckResult::unsupported(name(check), "mutmut is not available")
+                    optional_repository_harness(execution, repo, check, "mutmut is not available")
                 }
             }
             CheckKind::Security => {
@@ -88,32 +94,77 @@ impl LanguageAdapter for PythonAdapter {
                         &["-m", "bandit", "-r", ".", "-q"],
                     )
                 } else {
-                    CheckResult::unsupported(name(check), "bandit is not available")
+                    optional_repository_harness(execution, repo, check, "bandit is not available")
                 }
             }
             CheckKind::Dependencies => {
                 run_python(execution, repo, check, &python, &["-m", "pip", "check"])
             }
             CheckKind::Placeholders => scan_placeholders(repo),
-            CheckKind::Fuzz
-            | CheckKind::Concurrency
-            | CheckKind::Contracts
-            | CheckKind::Stress
-            | CheckKind::FaultInjection
-            | CheckKind::Ui
-            | CheckKind::FormalProof => CheckResult::unsupported(
-                name(check),
-                format!(
-                    "Python adapter has no configured {} harness for this repository",
-                    check.as_str()
-                ),
-            ),
+            CheckKind::Fuzz => required_repository_harness(execution, repo, check),
+            CheckKind::Concurrency => run_concurrency(execution, repo),
+            CheckKind::Contracts => required_repository_harness(execution, repo, check),
+            CheckKind::Stress => required_repository_harness(execution, repo, check),
+            CheckKind::FaultInjection => required_repository_harness(execution, repo, check),
+            CheckKind::Ui => {
+                if has_ui_assets(repo) {
+                    required_repository_harness(execution, repo, check)
+                } else {
+                    CheckResult::skipped(
+                        name(check),
+                        "no UI assets or common Python web/UI framework markers were detected",
+                    )
+                }
+            }
+            CheckKind::FormalProof => required_repository_harness(execution, repo, check),
         }
     }
 }
 
 fn name(check: CheckKind) -> String {
     format!("python:{}", check.as_str())
+}
+
+fn repository_harness(
+    execution: &dyn ExecutionAdapter,
+    repo: &Path,
+    check: CheckKind,
+) -> Option<CheckResult> {
+    run_repository_harness(repo, execution, name(check), check.as_str())
+}
+
+fn required_repository_harness(
+    execution: &dyn ExecutionAdapter,
+    repo: &Path,
+    check: CheckKind,
+) -> CheckResult {
+    repository_harness(execution, repo, check).unwrap_or_else(|| {
+        CheckResult::unsupported(
+            name(check),
+            format!(
+                "required repository harness is missing: .verificationforge/{}.argv",
+                check.as_str()
+            ),
+        )
+    })
+}
+
+fn optional_repository_harness(
+    execution: &dyn ExecutionAdapter,
+    repo: &Path,
+    check: CheckKind,
+    native_message: &str,
+) -> CheckResult {
+    repository_harness(execution, repo, check).unwrap_or_else(|| {
+        CheckResult::unsupported(
+            name(check),
+            format!(
+                "{} and .verificationforge/{}.argv is missing",
+                native_message,
+                check.as_str()
+            ),
+        )
+    })
 }
 
 fn python_program(execution: &dyn ExecutionAdapter, repo: &Path) -> Option<String> {
@@ -151,8 +202,10 @@ fn module_available(
 
 fn run_tests(execution: &dyn ExecutionAdapter, repo: &Path, python: &str) -> CheckResult {
     if !has_test_files(repo) {
-        return CheckResult::unsupported(
-            name(CheckKind::Test),
+        return optional_repository_harness(
+            execution,
+            repo,
+            CheckKind::Test,
             "no Python test_*.py or *_test.py files were found",
         );
     }
@@ -177,11 +230,18 @@ fn run_tests(execution: &dyn ExecutionAdapter, repo: &Path, python: &str) -> Che
 
 fn run_coverage(execution: &dyn ExecutionAdapter, repo: &Path, python: &str) -> CheckResult {
     if !module_available(execution, repo, python, "coverage") {
-        return CheckResult::unsupported(name(CheckKind::Coverage), "coverage.py is not available");
+        return optional_repository_harness(
+            execution,
+            repo,
+            CheckKind::Coverage,
+            "coverage.py is not available",
+        );
     }
     if !has_test_files(repo) {
-        return CheckResult::unsupported(
-            name(CheckKind::Coverage),
+        return optional_repository_harness(
+            execution,
+            repo,
+            CheckKind::Coverage,
             "coverage cannot run because no Python tests were found",
         );
     }
@@ -216,6 +276,16 @@ fn run_coverage(execution: &dyn ExecutionAdapter, repo: &Path, python: &str) -> 
     )
 }
 
+fn run_concurrency(execution: &dyn ExecutionAdapter, repo: &Path) -> CheckResult {
+    if !has_concurrency_markers(repo) {
+        return CheckResult::skipped(
+            name(CheckKind::Concurrency),
+            "no Python threading, multiprocessing or async markers were detected",
+        );
+    }
+    required_repository_harness(execution, repo, CheckKind::Concurrency)
+}
+
 fn run_python(
     execution: &dyn ExecutionAdapter,
     repo: &Path,
@@ -238,7 +308,10 @@ fn run_command(
         .map(|value| (*value).to_owned())
         .collect::<Vec<_>>();
     match execution.execute(program, &args, repo) {
-        Ok(output) if output.success() => CheckResult::pass(name(check)),
+        Ok(output) if output.success() => CheckResult::pass_with_evidence(
+            name(check),
+            format!("command={} {} exit=0", program, values.join(" ")),
+        ),
         Ok(output) => CheckResult::fail(
             name(check),
             "VF_COMMAND_FAILED",
@@ -262,9 +335,10 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
         ["NotImplemented", "Error"].concat(),
     ];
     let mut findings = Vec::new();
+    let files = source_files(repo, "py");
 
-    for path in source_files(repo, "py") {
-        let Ok(content) = fs::read_to_string(&path) else {
+    for path in &files {
+        let Ok(content) = fs::read_to_string(path) else {
             continue;
         };
         for (index, line) in content.lines().enumerate() {
@@ -276,7 +350,7 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
                     code: "VF_PLACEHOLDER".into(),
                     message: format!(
                         "{}:{} contains placeholder marker {}",
-                        display_relative(repo, &path),
+                        display_relative(repo, path),
                         index + 1,
                         pattern
                     ),
@@ -284,10 +358,17 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
                 });
             }
         }
+        findings.extend(scan_semantic_fakes(repo, path, &content));
     }
 
     if findings.is_empty() {
-        CheckResult::pass(name(CheckKind::Placeholders))
+        CheckResult::pass_with_evidence(
+            name(CheckKind::Placeholders),
+            format!(
+                "scanned {} Python source files for placeholder and fake-success patterns",
+                files.len()
+            ),
+        )
     } else {
         CheckResult {
             check: name(CheckKind::Placeholders),
@@ -295,6 +376,182 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
             findings,
         }
     }
+}
+
+fn scan_semantic_fakes(repo: &Path, path: &Path, content: &str) -> Vec<Finding> {
+    let lines = content.lines().collect::<Vec<_>>();
+    let mut findings = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        let Some(function_name) = python_function_name(trimmed) else {
+            continue;
+        };
+        let public = !function_name.starts_with('_');
+        let sensitive = sensitive_gate_name(function_name);
+        if !(public || sensitive) {
+            continue;
+        }
+        let abstract_method = previous_significant_line(&lines, index)
+            .is_some_and(|value| value.trim().contains("@abstractmethod"));
+        let indent = leading_indent(line);
+        let Some((body_index, body_line)) = first_python_body_line(&lines, index, indent) else {
+            continue;
+        };
+        let statement = body_line.split('#').next().unwrap_or_default().trim();
+
+        if public && !abstract_method && matches!(statement, "pass" | "...") {
+            findings.push(fake_finding(
+                repo,
+                path,
+                body_index,
+                function_name,
+                "public function has an empty pass/ellipsis implementation",
+            ));
+        } else if sensitive && constant_python_bool(statement) {
+            findings.push(fake_finding(
+                repo,
+                path,
+                body_index,
+                function_name,
+                "authorization/permission function returns a constant boolean",
+            ));
+        }
+    }
+    findings
+}
+
+fn python_function_name(line: &str) -> Option<&str> {
+    let line = line.strip_prefix("async ").unwrap_or(line);
+    let rest = line.strip_prefix("def ")?;
+    let end = rest
+        .find(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
+        .unwrap_or(rest.len());
+    (end > 0).then_some(&rest[..end])
+}
+
+fn previous_significant_line<'a>(lines: &[&'a str], index: usize) -> Option<&'a str> {
+    lines[..index]
+        .iter()
+        .rev()
+        .copied()
+        .find(|line| !line.trim().is_empty())
+}
+
+fn first_python_body_line<'a>(
+    lines: &[&'a str],
+    index: usize,
+    function_indent: usize,
+) -> Option<(usize, &'a str)> {
+    for (body_index, line) in lines.iter().enumerate().skip(index + 1) {
+        if line.trim().is_empty() || line.trim_start().starts_with('#') {
+            continue;
+        }
+        if leading_indent(line) <= function_indent {
+            return None;
+        }
+        return Some((body_index, *line));
+    }
+    None
+}
+
+fn leading_indent(line: &str) -> usize {
+    line.chars()
+        .take_while(|character| character.is_whitespace())
+        .count()
+}
+
+fn sensitive_gate_name(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    [
+        "authoriz",
+        "authenticate",
+        "permission",
+        "has_access",
+        "can_access",
+        "is_admin",
+        "allow_access",
+    ]
+    .iter()
+    .any(|marker| name.contains(marker))
+}
+
+fn constant_python_bool(statement: &str) -> bool {
+    let normalized = statement
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    matches!(normalized.as_str(), "returntrue" | "returnfalse")
+}
+
+fn fake_finding(
+    repo: &Path,
+    path: &Path,
+    index: usize,
+    function_name: &str,
+    reason: &str,
+) -> Finding {
+    Finding {
+        code: "VF_FAKE_IMPLEMENTATION".into(),
+        message: format!(
+            "{}:{} function {}: {}",
+            display_relative(repo, path),
+            index + 1,
+            function_name,
+            reason
+        ),
+        blocking: true,
+    }
+}
+
+fn has_concurrency_markers(repo: &Path) -> bool {
+    source_files(repo, "py").iter().any(|path| {
+        fs::read_to_string(path).is_ok_and(|content| {
+            [
+                "import threading",
+                "from threading",
+                "import multiprocessing",
+                "from multiprocessing",
+                "import asyncio",
+                "from asyncio",
+                "async def ",
+                "await ",
+                "ThreadPoolExecutor",
+                "ProcessPoolExecutor",
+            ]
+            .iter()
+            .any(|marker| content.contains(marker))
+        })
+    })
+}
+
+fn has_ui_assets(repo: &Path) -> bool {
+    ["html", "css", "js", "ts", "tsx", "jsx"]
+        .iter()
+        .any(|extension| contains_extension(repo, extension))
+        || ["templates", "static", "frontend", "web", "ui"]
+            .iter()
+            .any(|directory| repo.join(directory).is_dir())
+        || source_files(repo, "py").iter().any(|path| {
+            fs::read_to_string(path).is_ok_and(|content| {
+                [
+                    "import flask",
+                    "from flask",
+                    "import django",
+                    "from django",
+                    "import fastapi",
+                    "from fastapi",
+                    "import streamlit",
+                    "from streamlit",
+                    "import gradio",
+                    "from gradio",
+                    "import tkinter",
+                    "from tkinter",
+                ]
+                .iter()
+                .any(|marker| content.contains(marker))
+            })
+        })
 }
 
 fn failure_message(
@@ -414,6 +671,57 @@ mod tests {
         .expect("write source");
         let result = scan_placeholders(&root);
         assert_eq!(result.status, CheckStatus::Fail);
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn placeholder_scan_blocks_constant_authorization() {
+        let root = temp_dir();
+        fs::create_dir_all(root.join("package")).expect("create dirs");
+        fs::write(
+            root.join("package/module.py"),
+            "def authorize_user(user):\n    return True\n",
+        )
+        .expect("write source");
+        let result = scan_placeholders(&root);
+        assert_eq!(result.status, CheckStatus::Fail);
+        assert!(
+            result
+                .findings
+                .iter()
+                .any(|finding| finding.code == "VF_FAKE_IMPLEMENTATION")
+        );
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn placeholder_scan_blocks_public_pass_body() {
+        let root = temp_dir();
+        fs::create_dir_all(root.join("package")).expect("create dirs");
+        fs::write(root.join("package/module.py"), "def persist():\n    pass\n")
+            .expect("write source");
+        let result = scan_placeholders(&root);
+        assert_eq!(result.status, CheckStatus::Fail);
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn clean_placeholder_scan_carries_evidence() {
+        let root = temp_dir();
+        fs::create_dir_all(root.join("package")).expect("create dirs");
+        fs::write(root.join("package/module.py"), "VALUE = 1\n").expect("write source");
+        let result = scan_placeholders(&root);
+        assert_eq!(result.status, CheckStatus::Pass);
+        assert!(result.has_reproducible_evidence());
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn ui_check_is_not_applicable_for_plain_module() {
+        let root = temp_dir();
+        fs::create_dir_all(root.join("package")).expect("create dirs");
+        fs::write(root.join("package/module.py"), "VALUE = 1\n").expect("write source");
+        assert!(!has_ui_assets(&root));
         fs::remove_dir_all(root).ok();
     }
 }

@@ -22,7 +22,16 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace --all-targets --locked
       - name: Self-verify Rust patch gate
-        run: cargo run -p verificationforge-cli -- . --level patch
+        shell: bash
+        run: |
+          set +e
+          output="$(cargo run -p verificationforge-cli -- . --level patch --risk low 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+          test "${status}" -eq 0
       - name: Verify a real Python fixture
         shell: bash
         run: |
@@ -43,7 +52,14 @@ jobs:
           if __name__ == "__main__":
               unittest.main()
           PY
-          cargo run -p verificationforge-cli -- "${fixture}" --level patch
+          set +e
+          output="$(cargo run -p verificationforge-cli -- "${fixture}" --level patch 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "${output}"
+          grep -q '^VERIFICATIONFORGE_BARE_PASSES=0$' <<<"${output}"
+          grep -q '^VERIFICATIONFORGE_ACCEPTED=true$' <<<"${output}"
+          test "${status}" -eq 0
       - name: Unknown-language repositories must fail
         shell: bash
         run: |
