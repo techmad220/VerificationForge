@@ -203,10 +203,6 @@ impl TrackedDevelopmentSession {
         &self.inner
     }
 
-    pub fn controlled_session_mut(&mut self) -> &mut ControlledDevelopmentSession {
-        &mut self.inner
-    }
-
     pub fn telemetry(&self) -> &OperationTelemetry {
         &self.telemetry
     }
@@ -347,14 +343,9 @@ impl TrackedDevelopmentSession {
             Some(command),
         );
         let Some(requirement) = spec.requirement.clone() else {
-            return self.reject_execution(
-                spec,
-                "tracked command requires an explicit requirement",
-            );
+            return self.reject_execution(spec, "tracked command requires an explicit requirement");
         };
-        self.capture_execution(spec, |inner| {
-            inner.run_command(program, args, requirement)
-        })
+        self.capture_execution(spec, |inner| inner.run_command(program, args, requirement))
     }
 
     pub fn run_test(
@@ -375,9 +366,7 @@ impl TrackedDevelopmentSession {
             context,
             Some(command),
         );
-        self.capture_execution(spec, |inner| {
-            inner.run_test(program, args, requirement)
-        })
+        self.capture_execution(spec, |inner| inner.run_test(program, args, requirement))
     }
 
     pub fn commit(
@@ -765,7 +754,11 @@ mod tests {
             .run_command("cargo", &["check".into()], OperationContext::default())
             .expect_err("unscoped command must fail");
         assert!(error.contains("explicit requirement"));
-        let operation = session.telemetry().operations().last().expect("trace entry");
+        let operation = session
+            .telemetry()
+            .operations()
+            .last()
+            .expect("trace entry");
         assert!(!operation.outcome.accepted);
         assert_eq!(operation.command.as_ref().expect("command").args, ["check"]);
         fs::remove_dir_all(root).ok();
