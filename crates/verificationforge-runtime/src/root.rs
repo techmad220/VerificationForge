@@ -2,6 +2,7 @@ include!("lib.rs");
 
 pub use verificationforge_core::{RiskTier, VerificationPolicy};
 
+mod authenticity;
 mod certification;
 pub use certification::*;
 mod config;
