@@ -46,19 +46,18 @@ fn run() -> Result<bool, String> {
     let engine = VerificationEngine::new(registry, Arc::new(ProcessExecutionAdapter));
     let policy = VerificationPolicy::for_risk(config.risk);
     let session = match &config.journal_dir {
-        Some(root) => VerificationSession::run_journaled(
-            &engine,
-            &canonical,
-            config.level,
-            &policy,
-            root,
-        )?,
+        Some(root) => {
+            VerificationSession::run_journaled(&engine, &canonical, config.level, &policy, root)?
+        }
         None => VerificationSession::run(&engine, &canonical, config.level, &policy)?,
     };
     let report = &session.report;
 
     if let Some(path) = &config.certification_json {
-        if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
             fs::create_dir_all(parent).map_err(|error| {
                 format!(
                     "cannot create certification directory {}: {error}",
@@ -186,10 +185,10 @@ fn parse_args() -> Result<CliConfig, String> {
             continue;
         }
         if text == "--certification-json" {
-            certification_json = Some(PathBuf::from(
-                args.next()
-                    .ok_or_else(|| "--certification-json requires a path".to_owned())?,
-            ));
+            certification_json =
+                Some(PathBuf::from(args.next().ok_or_else(|| {
+                    "--certification-json requires a path".to_owned()
+                })?));
             continue;
         }
         if let Some(value) = text.strip_prefix("--certification-json=") {
