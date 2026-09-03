@@ -1,0 +1,46 @@
+name: Repair Web Detection
+
+on:
+  push:
+    branches: [agent/expand-web-dev-family]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/expand-web-dev-family
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Tighten Deno detection and verify workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -c 'from pathlib import Path; p=Path("crates/verificationforge-adapter-web-family/src/lib.rs"); s=p.read_text(); old="            || repository_contains_all(repo, &[\"deno.\"])"; assert old in s; s=s.replace(old,"            || repo.join(\"deno.lock\").is_file()",1); start=s.index("\nfn repository_contains_all("); end=s.index("\nfn interactive_control_count", start); p.write_text(s[:start]+s[end:])'
+          cargo fmt --all
+          cargo check --workspace --all-targets --locked
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace --all-targets --locked
+
+      - name: Commit repair and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/repair-web-detection.yml
+          git config user.name "techmad220"
+          git config user.email "143960678+techmad220@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Harden web runtime ecosystem detection"
+          git push origin HEAD:agent/expand-web-dev-family
