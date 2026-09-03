@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+
 use verificationforge_core::{
     CheckKind, CheckResult, CheckStatus, ExecutionAdapter, Finding, LanguageAdapter,
     LanguageDetection,
@@ -95,19 +96,36 @@ impl LanguageAdapter for PythonAdapter {
                 run_python(execution, repo, check, &python, &["-m", "pip", "check"])
             }
             CheckKind::Placeholders => scan_placeholders(repo),
-            CheckKind::Fuzz
-            | CheckKind::Concurrency
-            | CheckKind::Contracts
-            | CheckKind::Stress
-            | CheckKind::FaultInjection
-            | CheckKind::Ui
-            | CheckKind::FormalProof => CheckResult::unsupported(
-                name(check),
-                format!(
-                    "Python adapter has no configured {} harness for this repository",
-                    check.as_str()
-                ),
+            CheckKind::Fuzz => {
+                run_named_harness(execution, repo, &python, check, "test_fuzz.py")
+            }
+            CheckKind::Concurrency => run_concurrency(execution, repo, &python),
+            CheckKind::Contracts => {
+                run_named_harness(execution, repo, &python, check, "test_contracts.py")
+            }
+            CheckKind::Stress => {
+                run_named_harness(execution, repo, &python, check, "test_stress.py")
+            }
+            CheckKind::FaultInjection => run_named_harness(
+                execution,
+                repo,
+                &python,
+                check,
+                "test_fault_injection.py",
             ),
+            CheckKind::Ui => {
+                if has_ui_assets(repo) {
+                    run_named_harness(execution, repo, &python, check, "test_ui.py")
+                } else {
+                    CheckResult::skipped(
+                        name(check),
+                        "no UI assets or common Python web/UI framework markers were detected",
+                    )
+                }
+            }
+            CheckKind::FormalProof => {
+                run_named_harness(execution, repo, &python, check, "test_formal.py")
+            }
         }
     }
 }
@@ -200,7 +218,15 @@ fn run_coverage(execution: &dyn ExecutionAdapter, repo: &Path, python: &str) -> 
             repo,
             CheckKind::Coverage,
             python,
-            &["-m", "coverage", "run", "-m", "unittest", "discover", "-v"],
+            &[
+                "-m",
+                "coverage",
+                "run",
+                "-m",
+                "unittest",
+                "discover",
+                "-v",
+            ],
         )
     };
     if run.status != CheckStatus::Pass {
@@ -213,6 +239,76 @@ fn run_coverage(execution: &dyn ExecutionAdapter, repo: &Path, python: &str) -> 
         CheckKind::Coverage,
         python,
         &["-m", "coverage", "report"],
+    )
+}
+
+fn run_named_harness(
+    execution: &dyn ExecutionAdapter,
+    repo: &Path,
+    python: &str,
+    check: CheckKind,
+    file_name: &str,
+) -> CheckResult {
+    let harness_dir = repo.join("tests").join("verificationforge");
+    let path = harness_dir.join(file_name);
+    if !path.is_file() {
+        return CheckResult::unsupported(
+            name(check),
+            format!(
+                "required Python harness {} is missing; add tests/verificationforge/{}",
+                check.as_str(),
+                file_name
+            ),
+        );
+    }
+
+    if module_available(execution, repo, python, "pytest") {
+        let path_string = display_relative(repo, &path);
+        run_python(
+            execution,
+            repo,
+            check,
+            python,
+            &["-m", "pytest", "-q", &path_string],
+        )
+    } else {
+        run_python(
+            execution,
+            repo,
+            check,
+            python,
+            &[
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "tests/verificationforge",
+                "-p",
+                file_name,
+                "-v",
+            ],
+        )
+    }
+}
+
+fn run_concurrency(
+    execution: &dyn ExecutionAdapter,
+    repo: &Path,
+    python: &str,
+) -> CheckResult {
+    if !has_concurrency_markers(repo) {
+        return CheckResult::skipped(
+            name(CheckKind::Concurrency),
+            "no Python threading, multiprocessing or async markers were detected",
+        );
+    }
+
+    run_named_harness(
+        execution,
+        repo,
+        python,
+        CheckKind::Concurrency,
+        "test_concurrency.py",
     )
 }
 
@@ -238,7 +334,10 @@ fn run_command(
         .map(|value| (*value).to_owned())
         .collect::<Vec<_>>();
     match execution.execute(program, &args, repo) {
-        Ok(output) if output.success() => CheckResult::pass(name(check)),
+        Ok(output) if output.success() => CheckResult::pass_with_evidence(
+            name(check),
+            format!("command={} {} exit=0", program, values.join(" ")),
+        ),
         Ok(output) => CheckResult::fail(
             name(check),
             "VF_COMMAND_FAILED",
@@ -262,9 +361,10 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
         ["NotImplemented", "Error"].concat(),
     ];
     let mut findings = Vec::new();
+    let files = source_files(repo, "py");
 
-    for path in source_files(repo, "py") {
-        let Ok(content) = fs::read_to_string(&path) else {
+    for path in &files {
+        let Ok(content) = fs::read_to_string(path) else {
             continue;
         };
         for (index, line) in content.lines().enumerate() {
@@ -276,7 +376,7 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
                     code: "VF_PLACEHOLDER".into(),
                     message: format!(
                         "{}:{} contains placeholder marker {}",
-                        display_relative(repo, &path),
+                        display_relative(repo, path),
                         index + 1,
                         pattern
                     ),
@@ -287,7 +387,13 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
     }
 
     if findings.is_empty() {
-        CheckResult::pass(name(CheckKind::Placeholders))
+        CheckResult::pass_with_evidence(
+            name(CheckKind::Placeholders),
+            format!(
+                "scanned {} Python source files for placeholder markers",
+                files.len()
+            ),
+        )
     } else {
         CheckResult {
             check: name(CheckKind::Placeholders),
@@ -295,6 +401,56 @@ fn scan_placeholders(repo: &Path) -> CheckResult {
             findings,
         }
     }
+}
+
+fn has_concurrency_markers(repo: &Path) -> bool {
+    source_files(repo, "py").iter().any(|path| {
+        fs::read_to_string(path).is_ok_and(|content| {
+            [
+                "import threading",
+                "from threading",
+                "import multiprocessing",
+                "from multiprocessing",
+                "import asyncio",
+                "from asyncio",
+                "async def ",
+                "await ",
+                "ThreadPoolExecutor",
+                "ProcessPoolExecutor",
+            ]
+            .iter()
+            .any(|marker| content.contains(marker))
+        })
+    })
+}
+
+fn has_ui_assets(repo: &Path) -> bool {
+    ["html", "css", "js", "ts", "tsx", "jsx"]
+        .iter()
+        .any(|extension| contains_extension(repo, extension))
+        || ["templates", "static", "frontend", "web", "ui"]
+            .iter()
+            .any(|directory| repo.join(directory).is_dir())
+        || source_files(repo, "py").iter().any(|path| {
+            fs::read_to_string(path).is_ok_and(|content| {
+                [
+                    "import flask",
+                    "from flask",
+                    "import django",
+                    "from django",
+                    "import fastapi",
+                    "from fastapi",
+                    "import streamlit",
+                    "from streamlit",
+                    "import gradio",
+                    "from gradio",
+                    "import tkinter",
+                    "from tkinter",
+                ]
+                .iter()
+                .any(|marker| content.contains(marker))
+            })
+        })
 }
 
 fn failure_message(
@@ -360,7 +516,13 @@ fn visit(path: &Path, extension: &str, depth: usize, files: &mut Vec<PathBuf>) {
             let name = name.to_string_lossy();
             if matches!(
                 name.as_ref(),
-                ".git" | "target" | "vendor" | "node_modules" | ".venv" | "venv" | "__pycache__"
+                ".git"
+                    | "target"
+                    | "vendor"
+                    | "node_modules"
+                    | ".venv"
+                    | "venv"
+                    | "__pycache__"
             ) {
                 continue;
             }
@@ -414,6 +576,26 @@ mod tests {
         .expect("write source");
         let result = scan_placeholders(&root);
         assert_eq!(result.status, CheckStatus::Fail);
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn clean_placeholder_scan_carries_evidence() {
+        let root = temp_dir();
+        fs::create_dir_all(root.join("package")).expect("create dirs");
+        fs::write(root.join("package/module.py"), "VALUE = 1\n").expect("write source");
+        let result = scan_placeholders(&root);
+        assert_eq!(result.status, CheckStatus::Pass);
+        assert!(result.has_reproducible_evidence());
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn ui_check_is_not_applicable_for_plain_module() {
+        let root = temp_dir();
+        fs::create_dir_all(root.join("package")).expect("create dirs");
+        fs::write(root.join("package/module.py"), "VALUE = 1\n").expect("write source");
+        assert!(!has_ui_assets(&root));
         fs::remove_dir_all(root).ok();
     }
 }
