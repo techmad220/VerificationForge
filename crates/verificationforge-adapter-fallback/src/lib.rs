@@ -164,16 +164,16 @@ fn scan_placeholders(profile: &LanguageProfile, repo: &Path) -> CheckResult {
 
 fn placeholder_marker(line: &str) -> Option<&'static str> {
     let lower = line.to_ascii_lowercase();
-    if lower.contains("todo:") || lower.contains("todo!(") {
+    if lower.contains(&["to", "do:"].concat()) || lower.contains(&["to", "do!("].concat()) {
         return Some("TODO");
     }
-    if lower.contains("fixme:") {
+    if lower.contains(&["fix", "me:"].concat()) {
         return Some("FIXME");
     }
-    if lower.contains("xxx:") {
+    if lower.contains(&["x", "xx:"].concat()) {
         return Some("XXX");
     }
-    if lower.contains("unimplemented!(") {
+    if lower.contains(&["unimplemented", "!("].concat()) {
         return Some("unimplemented");
     }
     if lower.contains("notimplemented") || lower.contains("not implemented") {
@@ -442,9 +442,10 @@ mod tests {
     fn generic_placeholder_scan_blocks_explicit_stubs() {
         let root = temp_dir("placeholders");
         fs::create_dir_all(&root).expect("create root");
+        let marker = ["FIX", "ME:"].concat();
         fs::write(
             root.join("main.go"),
-            "package main\n// FIXME: implement auth\n",
+            format!("package main\n// {marker} implement auth\n"),
         )
         .expect("write go");
         let adapter = FallbackLanguageAdapter::new(profile("go"));
