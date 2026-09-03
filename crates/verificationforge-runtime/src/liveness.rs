@@ -42,8 +42,9 @@ pub struct RunSupervisor {
 
 impl RunSupervisor {
     pub fn create(root: &Path, run_id: impl Into<String>) -> Result<Self, String> {
-        fs::create_dir_all(root)
-            .map_err(|error| format!("cannot create supervisor root {}: {error}", root.display()))?;
+        fs::create_dir_all(root).map_err(|error| {
+            format!("cannot create supervisor root {}: {error}", root.display())
+        })?;
         let run_id = run_id.into();
         validate_id("run", &run_id)?;
         let supervisor = Self {
@@ -62,7 +63,11 @@ impl RunSupervisor {
         let content = fs::read_to_string(&path)
             .map_err(|error| format!("cannot read supervisor {}: {error}", path.display()))?;
         let tasks = decode_tasks(&content)?;
-        Ok(Self { path, run_id, tasks })
+        Ok(Self {
+            path,
+            run_id,
+            tasks,
+        })
     }
 
     pub fn register_task(
@@ -80,7 +85,10 @@ impl RunSupervisor {
         if waiting_on.contains(&id) {
             return Err(format!("task {id} cannot wait on itself"));
         }
-        if waiting_on.iter().any(|dependency| dependency.trim().is_empty()) {
+        if waiting_on
+            .iter()
+            .any(|dependency| dependency.trim().is_empty())
+        {
             return Err(format!("task {id} contains an empty dependency id"));
         }
         self.tasks.insert(
@@ -100,7 +108,10 @@ impl RunSupervisor {
     pub fn start_task(&mut self, id: &str, timestamp_ms: u128) -> Result<(), String> {
         let task = self.task_mut(id)?;
         if task.state != SupervisedTaskState::Pending {
-            return Err(format!("task {id} cannot start from state {:?}", task.state));
+            return Err(format!(
+                "task {id} cannot start from state {:?}",
+                task.state
+            ));
         }
         task.state = SupervisedTaskState::Running;
         task.last_progress_ms = timestamp_ms;
@@ -215,7 +226,13 @@ impl RunSupervisor {
         for candidate in &candidates {
             let mut visiting = BTreeSet::new();
             let mut visited = BTreeSet::new();
-            if self.reaches_cycle(candidate, candidate, &candidates, &mut visiting, &mut visited) {
+            if self.reaches_cycle(
+                candidate,
+                candidate,
+                &candidates,
+                &mut visiting,
+                &mut visited,
+            ) {
                 deadlocked.insert(candidate.clone());
             }
         }
@@ -277,7 +294,9 @@ fn validate_id(label: &str, id: &str) -> Result<(), String> {
         return Err(format!("{label} id cannot be empty"));
     }
     if id.contains(['\n', '\r', '\t', '|', ',']) {
-        return Err(format!("{label} id contains unsupported delimiter characters"));
+        return Err(format!(
+            "{label} id contains unsupported delimiter characters"
+        ));
     }
     Ok(())
 }
@@ -291,7 +310,12 @@ fn encode_tasks(tasks: &BTreeMap<String, SupervisedTask>) -> String {
             SupervisedTaskState::Completed => "completed",
             SupervisedTaskState::Failed => "failed",
         };
-        let waiting_on = task.waiting_on.iter().cloned().collect::<Vec<_>>().join(",");
+        let waiting_on = task
+            .waiting_on
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(",");
         let checkpoint = task.checkpoint.clone().unwrap_or_default();
         output.push_str(&format!(
             "{}|{}|{}|{}|{}|{}\n",
