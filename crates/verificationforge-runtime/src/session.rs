@@ -80,8 +80,7 @@ impl VerificationSession {
             )?;
         }
 
-        let certification =
-            CertificationArtifact::from_report(&report, repository_address, policy);
+        let certification = CertificationArtifact::from_report(&report, repository_address, policy);
         if let Some(journal) = journal.as_mut() {
             journal.append(
                 if certification.accepted {
@@ -197,7 +196,12 @@ mod tests {
 
         assert!(session.certification.accepted);
         assert!(session.snapshot.address.is_some());
-        assert!(session.journal_path.as_ref().is_some_and(|path| path.is_file()));
+        assert!(
+            session
+                .journal_path
+                .as_ref()
+                .is_some_and(|path| path.is_file())
+        );
 
         fs::remove_dir_all(repo).ok();
         fs::remove_dir_all(journals).ok();
