@@ -1,8 +1,6 @@
 use std::collections::BTreeSet;
 
-use crate::{
-    CheckStatus, EvidenceGraph, RequirementGraph, RequirementId, SymbolId,
-};
+use crate::{CheckStatus, EvidenceGraph, RequirementGraph, RequirementId, SymbolId};
 
 impl EvidenceGraph {
     pub fn requirements_without_evidence(
@@ -29,24 +27,17 @@ impl EvidenceGraph {
             .requirements
             .iter()
             .filter(|requirement| {
-                !self
-                    .evidence
-                    .get(*requirement)
-                    .is_some_and(|results| {
-                        results.iter().any(|result| {
-                            result.status == CheckStatus::Pass
-                                && result.has_reproducible_evidence()
-                        })
+                !self.evidence.get(*requirement).is_some_and(|results| {
+                    results.iter().any(|result| {
+                        result.status == CheckStatus::Pass && result.has_reproducible_evidence()
                     })
+                })
             })
             .cloned()
             .collect()
     }
 
-    pub fn weakly_proven_symbols(
-        &self,
-        requirements: &RequirementGraph,
-    ) -> BTreeSet<SymbolId> {
+    pub fn weakly_proven_symbols(&self, requirements: &RequirementGraph) -> BTreeSet<SymbolId> {
         let weak_requirements = self.requirements_without_reproducible_pass(requirements);
         weak_requirements
             .iter()
@@ -69,10 +60,9 @@ mod tests {
         let symbol_a = SymbolId("symbol-a".into());
         let symbol_b = SymbolId("symbol-b".into());
         let mut requirements = RequirementGraph::default();
-        requirements.requirements.extend([
-            requirement_a.clone(),
-            requirement_b.clone(),
-        ]);
+        requirements
+            .requirements
+            .extend([requirement_a.clone(), requirement_b.clone()]);
         requirements
             .implemented_by
             .entry(requirement_a.clone())
