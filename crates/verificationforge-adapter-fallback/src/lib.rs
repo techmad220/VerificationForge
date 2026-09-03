@@ -70,7 +70,7 @@ impl LanguageAdapter for FallbackLanguageAdapter {
         let source = files
             .iter()
             .any(|path| path_extension_matches(path, self.profile.extensions));
-        (manifest || source).then(|| LanguageDetection {
+        source.then(|| LanguageDetection {
             adapter_id: self.profile.id.into(),
             language: self.profile.language.into(),
             confidence_percent: if manifest { 95 } else { 75 },
@@ -365,6 +365,20 @@ mod tests {
             typescript.detect(&root).expect("typescript detected").language,
             "TypeScript"
         );
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn shared_manifest_does_not_create_false_language_detection() {
+        let root = temp_dir("manifest-only");
+        fs::create_dir_all(&root).expect("create root");
+        fs::write(root.join("CMakeLists.txt"), "project(demo)\n").expect("write cmake");
+        fs::write(root.join("main.c"), "int main(void) { return 0; }\n").expect("write c");
+
+        let c = FallbackLanguageAdapter::new(profile("c"));
+        let cpp = FallbackLanguageAdapter::new(profile("cpp"));
+        assert!(c.detect(&root).is_some());
+        assert!(cpp.detect(&root).is_none());
         fs::remove_dir_all(root).ok();
     }
 
