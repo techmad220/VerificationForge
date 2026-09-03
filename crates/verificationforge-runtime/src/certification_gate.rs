@@ -4,9 +4,7 @@ use verificationforge_core::{
     CheckKind, CheckResult, CheckStatus, CodeNodeKind, ExecutionResult, UniversalCodeGraph,
 };
 
-use crate::{
-    CommitGate, CommitGateReport, ContentAddress, RepositorySnapshot, VerificationEngine,
-};
+use crate::{CommitGate, CommitGateReport, ContentAddress, RepositorySnapshot, VerificationEngine};
 
 const EXTENDED_FUZZ_ITERATIONS: usize = 16_384;
 const STRESS_ITERATIONS: usize = 4_096;
@@ -107,7 +105,7 @@ impl CertificationGate {
         let mut entries = Vec::new();
         let mut work_plans = Vec::new();
 
-        let required_harnesses = [
+        for (phase, iterations) in [
             (CertificationGatePhase::FullMutation, 1),
             (
                 CertificationGatePhase::ExtendedFuzz,
@@ -123,8 +121,7 @@ impl CertificationGate {
                 RESOURCE_LEAK_ITERATIONS,
             ),
             (CertificationGatePhase::Sandbox, SANDBOX_ITERATIONS),
-        ];
-        for (phase, iterations) in required_harnesses {
+        ] {
             let plan = work_plan(&repository_address, phase, iterations);
             let result = run_certification_harness(engine, repo, &plan);
             work_plans.push(plan);
@@ -329,7 +326,9 @@ fn run_certification_harness(
     let program = &rendered[0];
     let args = &rendered[1..];
     match engine.execution.execute(program, args, repo) {
-        Ok(output) if output.success() => validate_phase_output(&check_name, &relative, plan, output),
+        Ok(output) if output.success() => {
+            validate_phase_output(&check_name, &relative, plan, output)
+        }
         Ok(output) => CheckResult::fail(
             check_name,
             "VF_CERT_HARNESS_FAILED",
@@ -423,18 +422,16 @@ fn validate_phase_output(
             "VF_CERT_FUZZ_ITERATIONS",
             plan.iterations,
         )],
-        CertificationGatePhase::Concurrency => vec![RequiredMetric::Minimum(
-            "VF_CERT_CONCURRENCY_CASES",
-            1,
-        )],
+        CertificationGatePhase::Concurrency => {
+            vec![RequiredMetric::Minimum("VF_CERT_CONCURRENCY_CASES", 1)]
+        }
         CertificationGatePhase::Stress => vec![RequiredMetric::Minimum(
             "VF_CERT_STRESS_ITERATIONS",
             plan.iterations,
         )],
-        CertificationGatePhase::FaultInjection => vec![RequiredMetric::Minimum(
-            "VF_CERT_FAULT_CASES",
-            1,
-        )],
+        CertificationGatePhase::FaultInjection => {
+            vec![RequiredMetric::Minimum("VF_CERT_FAULT_CASES", 1)]
+        }
         CertificationGatePhase::ResourceLeaks => {
             vec![RequiredMetric::Exact("VF_CERT_RESOURCE_LEAKS", 0)]
         }
@@ -582,10 +579,7 @@ fn run_reproducibility_harness(
 
 fn run_history_security(engine: &VerificationEngine, repo: &Path) -> CheckResult {
     let check_name = "certification:history-security";
-    let rev_parse = vec![
-        "rev-parse".to_owned(),
-        "--is-inside-work-tree".to_owned(),
-    ];
+    let rev_parse = vec!["rev-parse".to_owned(), "--is-inside-work-tree".to_owned()];
     match engine.execution.execute("git", &rev_parse, repo) {
         Ok(output) if output.success() && output.stdout.trim() == "true" => {}
         Ok(output) => {
@@ -625,11 +619,7 @@ fn run_history_security(engine: &VerificationEngine, repo: &Path) -> CheckResult
             );
         }
         Err(error) => {
-            return CheckResult::fail(
-                check_name,
-                "VF_CERT_HISTORY_SCAN_FAILED",
-                error,
-            );
+            return CheckResult::fail(check_name, "VF_CERT_HISTORY_SCAN_FAILED", error);
         }
     };
 
@@ -712,7 +702,7 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::PathBuf;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use verificationforge_core::{
@@ -751,19 +741,11 @@ mod tests {
             )
         }
 
-        fn run_parse_check(
-            &self,
-            _repo: &Path,
-            _execution: &dyn ExecutionAdapter,
-        ) -> CheckResult {
+        fn run_parse_check(&self, _repo: &Path, _execution: &dyn ExecutionAdapter) -> CheckResult {
             CheckResult::pass_with_evidence("demo:parse", "parse evidence")
         }
 
-        fn run_format_check(
-            &self,
-            _repo: &Path,
-            _execution: &dyn ExecutionAdapter,
-        ) -> CheckResult {
+        fn run_format_check(&self, _repo: &Path, _execution: &dyn ExecutionAdapter) -> CheckResult {
             CheckResult::pass_with_evidence("demo:format", "format evidence")
         }
 
@@ -813,10 +795,7 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
-    struct RecordingExecution {
-        calls: Mutex<Vec<(String, Vec<String>)>>,
-    }
+    struct RecordingExecution;
 
     impl ExecutionAdapter for RecordingExecution {
         fn id(&self) -> &'static str {
@@ -829,10 +808,6 @@ mod tests {
             args: &[String],
             _cwd: &Path,
         ) -> Result<ExecutionResult, String> {
-            self.calls
-                .lock()
-                .expect("calls lock poisoned")
-                .push((program.into(), args.to_vec()));
             if program == "git" && args.first().is_some_and(|arg| arg == "rev-parse") {
                 return Ok(ExecutionResult {
                     exit_code: 0,
@@ -909,14 +884,19 @@ mod tests {
             "certification-sandbox",
             "certification-reproducibility",
         ] {
-            let content = if name.starts_with("commit-") {
-                format!("cert-tool\n{}\n{{seed}}\n{{selections}}\n{{iterations}}\n", &name[7..])
+            let content = if let Some(phase) = name.strip_prefix("commit-") {
+                format!(
+                    "cert-tool\n{phase}\n{{seed}}\n{{selections}}\n{{iterations}}\n"
+                )
             } else {
                 let phase = name.trim_start_matches("certification-");
                 format!("cert-tool\n{phase}\n{{seed}}\n{{iterations}}\n")
             };
-            fs::write(repo.join(format!(".verificationforge/{name}.argv")), content)
-                .expect("write gate harness");
+            fs::write(
+                repo.join(format!(".verificationforge/{name}.argv")),
+                content,
+            )
+            .expect("write gate harness");
         }
         if with_ui {
             write_harness(&repo, "ui");
@@ -956,7 +936,7 @@ mod tests {
 
         let mut registry = AdapterRegistry::default();
         registry.register(Arc::new(DemoAdapter));
-        let engine = VerificationEngine::new(registry, Arc::new(RecordingExecution::default()));
+        let engine = VerificationEngine::new(registry, Arc::new(RecordingExecution));
         (repo, baseline, graph, engine)
     }
 
@@ -1024,20 +1004,12 @@ mod tests {
     }
 
     #[test]
-    fn history_scanner_blocks_high_confidence_removed_credentials() {
-        let execution = RecordingExecution::default();
-        let repo = temp_dir("history");
-        fs::create_dir_all(&repo).expect("create repo");
-        let args = vec!["log".to_owned()];
-        execution
-            .calls
-            .lock()
-            .expect("calls lock")
-            .push(("noop".into(), args));
+    fn history_secret_classifier_blocks_literal_credentials_only() {
         assert!(looks_like_hardcoded_secret(
             "letpassword=\"supersecret123\";"
         ));
-        assert!(!looks_like_hardcoded_secret("letpassword=env::var(\"PASSWORD\");"));
-        fs::remove_dir_all(repo).ok();
+        assert!(!looks_like_hardcoded_secret(
+            "letpassword=env::var(\"PASSWORD\");"
+        ));
     }
 }
