@@ -9,4 +9,5 @@ publish.workspace = true
 verificationforge-runtime = { path = "../../crates/verificationforge-runtime" }
 verificationforge-adapter-rust = { path = "../../crates/verificationforge-adapter-rust" }
 verificationforge-adapter-python = { path = "../../crates/verificationforge-adapter-python" }
+verificationforge-adapter-go = { path = "../../crates/verificationforge-adapter-go" }
 verificationforge-adapter-fallback = { path = "../../crates/verificationforge-adapter-fallback" }
