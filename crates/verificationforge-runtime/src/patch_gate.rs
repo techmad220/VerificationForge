@@ -67,10 +67,9 @@ impl PatchGate {
             .address
             .clone()
             .ok_or_else(|| "patch baseline snapshot is missing its content address".to_owned())?;
-        let current_address = current
-            .address
-            .clone()
-            .ok_or_else(|| "current repository snapshot is missing its content address".to_owned())?;
+        let current_address = current.address.clone().ok_or_else(|| {
+            "current repository snapshot is missing its content address".to_owned()
+        })?;
         let diff = baseline.diff(&current);
         let impact = plan_impact(&diff, graph);
         let scope = ImpactScope {
@@ -307,19 +306,11 @@ mod tests {
             )
         }
 
-        fn run_parse_check(
-            &self,
-            _repo: &Path,
-            _execution: &dyn ExecutionAdapter,
-        ) -> CheckResult {
+        fn run_parse_check(&self, _repo: &Path, _execution: &dyn ExecutionAdapter) -> CheckResult {
             CheckResult::pass_with_evidence("demo:parse", "demo parser accepted source")
         }
 
-        fn run_format_check(
-            &self,
-            _repo: &Path,
-            _execution: &dyn ExecutionAdapter,
-        ) -> CheckResult {
+        fn run_format_check(&self, _repo: &Path, _execution: &dyn ExecutionAdapter) -> CheckResult {
             if self.format_supported {
                 CheckResult::pass_with_evidence("demo:format", "demo formatter is clean")
             } else {
@@ -421,9 +412,11 @@ mod tests {
             .clone()
             .expect("targeted scope recorded");
         assert!(scope.changed_paths.contains("service.demo"));
-        assert!(scope
-            .affected_symbols
-            .contains(&SymbolId("demo:function:service".into())));
+        assert!(
+            scope
+                .affected_symbols
+                .contains(&SymbolId("demo:function:service".into()))
+        );
         assert!(!scope.requires_full_verification);
         fs::remove_dir_all(repo).ok();
     }
@@ -437,20 +430,17 @@ mod tests {
             bare_build_pass: false,
             seen_scope: seen_scope.clone(),
         });
-        let report = PatchGate::verify(
-            &engine,
-            &repo,
-            &baseline,
-            &UniversalCodeGraph::default(),
-        )
-        .expect("patch gate should run");
+        let report = PatchGate::verify(&engine, &repo, &baseline, &UniversalCodeGraph::default())
+            .expect("patch gate should run");
         assert!(report.accepted);
         assert!(report.impact.requires_full_verification);
-        assert!(seen_scope
-            .lock()
-            .expect("scope lock poisoned")
-            .as_ref()
-            .is_some_and(|scope| scope.requires_full_verification));
+        assert!(
+            seen_scope
+                .lock()
+                .expect("scope lock poisoned")
+                .as_ref()
+                .is_some_and(|scope| scope.requires_full_verification)
+        );
         fs::remove_dir_all(repo).ok();
     }
 
@@ -466,8 +456,7 @@ mod tests {
             .expect("patch gate should run");
         assert!(!report.accepted);
         assert!(report.entries.iter().any(|entry| {
-            entry.phase == PatchGatePhase::Format
-                && entry.result.status == CheckStatus::Unsupported
+            entry.phase == PatchGatePhase::Format && entry.result.status == CheckStatus::Unsupported
         }));
         fs::remove_dir_all(repo).ok();
     }
