@@ -7,3 +7,6 @@ publish.workspace = true
 
 [dependencies]
 verificationforge-core = { path = "../verificationforge-core" }
+
+[lib]
+path = "src/root.rs"
