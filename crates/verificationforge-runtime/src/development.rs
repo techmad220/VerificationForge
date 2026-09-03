@@ -90,7 +90,13 @@ impl ControlledDevelopmentSession {
                 Ok(content)
             }
             Err(error) => {
-                self.record(AgentOperationKind::Read, None, target.clone(), false, Vec::new());
+                self.record(
+                    AgentOperationKind::Read,
+                    None,
+                    target.clone(),
+                    false,
+                    Vec::new(),
+                );
                 Err(format!("cannot read {target}: {error}"))
             }
         }
@@ -102,12 +108,7 @@ impl ControlledDevelopmentSession {
         content: &[u8],
         requirement: RequirementId,
     ) -> Result<(), String> {
-        self.write_controlled(
-            AgentOperationKind::Write,
-            relative,
-            content,
-            requirement,
-        )
+        self.write_controlled(AgentOperationKind::Write, relative, content, requirement)
     }
 
     pub fn write_dependency_file(
@@ -510,13 +511,7 @@ impl ControlledDevelopmentSession {
                 Ok(())
             }
             Err(error) => {
-                self.record(
-                    kind,
-                    Some(requirement),
-                    target.clone(),
-                    false,
-                    Vec::new(),
-                );
+                self.record(kind, Some(requirement), target.clone(), false, Vec::new());
                 Err(format!("cannot write {target}: {error}"))
             }
         }
@@ -786,10 +781,7 @@ mod tests {
         RequirementId("REQ-1".into())
     }
 
-    fn session(
-        root: &Path,
-        execution: Arc<dyn ExecutionAdapter>,
-    ) -> ControlledDevelopmentSession {
+    fn session(root: &Path, execution: Arc<dyn ExecutionAdapter>) -> ControlledDevelopmentSession {
         ControlledDevelopmentSession::new(
             root,
             "agent-a",
@@ -905,7 +897,11 @@ mod tests {
             .run_test("cargo", &args, Some(requirement()))
             .expect("test command");
         assert_eq!(
-            execution.calls.lock().expect("calls lock poisoned").as_slice(),
+            execution
+                .calls
+                .lock()
+                .expect("calls lock poisoned")
+                .as_slice(),
             &[("cargo".into(), args)]
         );
         assert!(
