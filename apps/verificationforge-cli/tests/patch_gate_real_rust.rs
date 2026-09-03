@@ -81,25 +81,13 @@ mod tests {
 }
 "#;
 
-const SECRET_PATCH_SOURCE: &str = r#"pub fn value() -> u8 {
-    3
+fn secret_patch_source() -> String {
+    let field_name = ["api", "_key"].concat();
+    let field_value = ["super-real-", "secret-12345"].concat();
+    format!(
+        "pub fn value() -> u8 {{\n    3\n}}\n\npub fn credential_value() -> usize {{\n    let {field_name} = \"{field_value}\";\n    {field_name}.len()\n}}\n\n#[cfg(test)]\nmod tests {{\n    use super::*;\n\n    #[test]\n    fn value_is_three() {{\n        assert_eq!(value(), 3);\n    }}\n}}\n"
+    )
 }
-
-pub fn credential_value() -> &'static str {
-    let api_key = "super-real-secret-12345";
-    api_key
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn value_is_three() {
-        assert_eq!(value(), 3);
-    }
-}
-"#;
 
 #[test]
 fn real_rust_patch_gate_accepts_clean_impact_targeted_patch() {
@@ -157,7 +145,8 @@ fn real_rust_patch_gate_rejects_hardcoded_secret_even_when_code_builds() {
     let root = temp_dir("secret");
     write_fixture(&root, CLEAN_PATCH_SOURCE);
     let baseline = RepositorySnapshot::capture(&root).expect("capture baseline");
-    fs::write(root.join("src/lib.rs"), SECRET_PATCH_SOURCE).expect("write secret patch");
+    let secret_patch = secret_patch_source();
+    fs::write(root.join("src/lib.rs"), secret_patch).expect("write secret patch");
 
     let report = PatchGate::verify(&engine(), &root, &baseline, &graph())
         .expect("real Rust Patch gate should run");
