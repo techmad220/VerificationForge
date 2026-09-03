@@ -17,7 +17,10 @@ impl SpecialistVerificationAdapter for NativeAuthenticitySpecialist {
     }
 
     fn domains(&self) -> &'static [SpecialistDomain] {
-        &[SpecialistDomain::StaticAnalysis, SpecialistDomain::Contracts]
+        &[
+            SpecialistDomain::StaticAnalysis,
+            SpecialistDomain::Contracts,
+        ]
     }
 
     fn supports(&self, check: CheckKind) -> bool {
@@ -82,8 +85,14 @@ fn scan_explicit_placeholders(
         (["X", "XX:"].concat(), "unfinished work marker"),
         (["unimplemented", "!("].concat(), "unimplemented macro"),
         (["todo", "!("].concat(), "unfinished-work macro"),
-        (["NotImplemented", "Error"].concat(), "not-implemented exception"),
-        (["UnsupportedOperation", "Exception"].concat(), "unsupported-operation exception"),
+        (
+            ["NotImplemented", "Error"].concat(),
+            "not-implemented exception",
+        ),
+        (
+            ["UnsupportedOperation", "Exception"].concat(),
+            "unsupported-operation exception",
+        ),
     ];
 
     for (index, line) in content.lines().enumerate() {
@@ -122,12 +131,7 @@ fn scan_explicit_placeholders(
     }
 }
 
-fn scan_semantic_fakes(
-    repo: &Path,
-    path: &Path,
-    content: &str,
-    findings: &mut Vec<Finding>,
-) {
+fn scan_semantic_fakes(repo: &Path, path: &Path, content: &str, findings: &mut Vec<Finding>) {
     match extension(path).as_str() {
         "rs" => scan_braced_family(repo, path, content, BracedFamily::Rust, findings),
         "go" => scan_braced_family(repo, path, content, BracedFamily::Go, findings),
@@ -281,9 +285,7 @@ fn braced_signature(line: &str, family: BracedFamily) -> Option<FunctionSignatur
             let paren = line.find('(')?;
             let left = line[..paren].trim_end();
             let name = left
-                .split(|character: char| {
-                    !(character.is_ascii_alphanumeric() || character == '_')
-                })
+                .split(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
                 .filter(|value| !value.is_empty())
                 .next_back()
                 .unwrap_or_default();
@@ -394,21 +396,13 @@ fn constant_decision_body(body: &str) -> bool {
     let normalized = body
         .chars()
         .filter(|character| {
-            !character.is_whitespace()
-                && !matches!(character, ';' | '{' | '}' | '(' | ')')
+            !character.is_whitespace() && !matches!(character, ';' | '{' | '}' | '(' | ')')
         })
         .collect::<String>()
         .to_ascii_lowercase();
     matches!(
         normalized.as_str(),
-        "true"
-            | "false"
-            | "returntrue"
-            | "returnfalse"
-            | "return1"
-            | "return0"
-            | "1"
-            | "0"
+        "true" | "false" | "returntrue" | "returnfalse" | "return1" | "return0" | "1" | "0"
     )
 }
 
@@ -480,13 +474,7 @@ fn identifier(value: &str) -> &str {
     &value[..end]
 }
 
-fn fake_finding(
-    repo: &Path,
-    path: &Path,
-    line: usize,
-    function: &str,
-    reason: &str,
-) -> Finding {
+fn fake_finding(repo: &Path, path: &Path, line: usize, function: &str, reason: &str) -> Finding {
     Finding {
         code: "VF_CRITICAL_FAKE_IMPLEMENTATION".into(),
         message: format!(
@@ -497,13 +485,7 @@ fn fake_finding(
     }
 }
 
-fn blocking_finding(
-    code: &str,
-    repo: &Path,
-    path: &Path,
-    line: usize,
-    reason: &str,
-) -> Finding {
+fn blocking_finding(code: &str, repo: &Path, path: &Path, line: usize, reason: &str) -> Finding {
     Finding {
         code: code.into(),
         message: format!("{}:{line} {reason}", display_relative(repo, path)),
@@ -673,11 +655,8 @@ mod tests {
         let root = root(name);
         fs::create_dir_all(&root).expect("create root");
         fs::write(root.join(file), content).expect("write fixture");
-        let result = NativeAuthenticitySpecialist.run_check(
-            CheckKind::Placeholders,
-            &root,
-            &NoExecution,
-        );
+        let result =
+            NativeAuthenticitySpecialist.run_check(CheckKind::Placeholders, &root, &NoExecution);
         fs::remove_dir_all(root).ok();
         result
     }
@@ -696,18 +675,26 @@ mod tests {
     #[test]
     fn explicit_unfinished_marker_is_blocking() {
         let marker = ["TO", "DO:"].concat();
-        let source = format!("def calculate(value):\n    # {marker} implement real calculation\n    return value\n");
+        let source = format!(
+            "def calculate(value):\n    # {marker} implement real calculation\n    return value\n"
+        );
         let result = scan_file("marker", "service.py", &source);
         assert_eq!(result.status, CheckStatus::Fail);
-        assert!(result
-            .findings
-            .iter()
-            .any(|finding| finding.code == "VF_CRITICAL_PLACEHOLDER"));
+        assert!(
+            result
+                .findings
+                .iter()
+                .any(|finding| finding.code == "VF_CRITICAL_PLACEHOLDER")
+        );
     }
 
     #[test]
     fn python_pass_and_constant_authorization_are_blocking() {
-        let pass_result = scan_file("python-pass", "service.py", "def persist(value):\n    pass\n");
+        let pass_result = scan_file(
+            "python-pass",
+            "service.py",
+            "def persist(value):\n    pass\n",
+        );
         assert_eq!(pass_result.status, CheckStatus::Fail);
 
         let auth_result = scan_file(
@@ -716,10 +703,12 @@ mod tests {
             "def authorize(user):\n    return True\n",
         );
         assert_eq!(auth_result.status, CheckStatus::Fail);
-        assert!(auth_result
-            .findings
-            .iter()
-            .any(|finding| finding.code == "VF_CRITICAL_FAKE_IMPLEMENTATION"));
+        assert!(
+            auth_result
+                .findings
+                .iter()
+                .any(|finding| finding.code == "VF_CRITICAL_FAKE_IMPLEMENTATION")
+        );
     }
 
     #[test]
@@ -731,11 +720,7 @@ mod tests {
         );
         assert_eq!(go.status, CheckStatus::Fail);
 
-        let rust = scan_file(
-            "rust-empty",
-            "lib.rs",
-            "pub fn persist(value: &str) {}\n",
-        );
+        let rust = scan_file("rust-empty", "lib.rs", "pub fn persist(value: &str) {}\n");
         assert_eq!(rust.status, CheckStatus::Fail);
     }
 
