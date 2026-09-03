@@ -139,6 +139,21 @@ impl CheckResult {
         }
     }
 
+    pub fn pass_with_evidence(
+        check: impl Into<String>,
+        evidence: impl Into<String>,
+    ) -> Self {
+        Self {
+            check: check.into(),
+            status: CheckStatus::Pass,
+            findings: vec![Finding {
+                code: "VF_EVIDENCE".into(),
+                message: evidence.into(),
+                blocking: false,
+            }],
+        }
+    }
+
     pub fn fail(
         check: impl Into<String>,
         code: impl Into<String>,
@@ -181,6 +196,12 @@ impl CheckResult {
 
     pub fn has_blocking_finding(&self) -> bool {
         self.findings.iter().any(|finding| finding.blocking)
+    }
+
+    pub fn has_reproducible_evidence(&self) -> bool {
+        self.findings.iter().any(|finding| {
+            finding.code == "VF_EVIDENCE" && !finding.message.trim().is_empty()
+        })
     }
 }
 
@@ -297,5 +318,13 @@ mod tests {
         assert!(checks.contains(&CheckKind::FaultInjection));
         assert!(checks.contains(&CheckKind::Ui));
         assert!(!checks.contains(&CheckKind::FormalProof));
+    }
+
+    #[test]
+    fn evidence_backed_pass_is_distinguishable_from_bare_pass() {
+        let bare = CheckResult::pass("demo:build");
+        let backed = CheckResult::pass_with_evidence("demo:build", "command=demo build exit=0");
+        assert!(!bare.has_reproducible_evidence());
+        assert!(backed.has_reproducible_evidence());
     }
 }
