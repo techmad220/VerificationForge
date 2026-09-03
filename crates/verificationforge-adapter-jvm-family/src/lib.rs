@@ -213,13 +213,13 @@ fn inventory_symbols(language: JvmLanguage, repo: &Path) -> Result<Vec<SymbolId>
                     }
                 }
             }
-            if matches!(language, JvmLanguage::Java) {
-                if let Some(name) = java_method_name(trimmed) {
-                    symbols.push(SymbolId(format!(
-                        "{}:method:{relative}:{name}",
-                        language.id()
-                    )));
-                }
+            if matches!(language, JvmLanguage::Java)
+                && let Some(name) = java_method_name(trimmed)
+            {
+                symbols.push(SymbolId(format!(
+                    "{}:method:{relative}:{name}",
+                    language.id()
+                )));
             }
         }
     }
