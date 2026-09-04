@@ -228,7 +228,20 @@ jobs:
           verify_fixture "$root/sql" sql
 
           mkdir -p "$root/hcl"
-          printf 'terraform { required_version = ">= 1.0" }\nvariable "x" { type = number default = 5 }\noutput "x" { value = var.x }\n' > "$root/hcl/main.tf"
+          cat > "$root/hcl/main.tf" <<'EOF'
+          terraform {
+            required_version = ">= 1.0"
+          }
+
+          variable "x" {
+            type    = number
+            default = 5
+          }
+
+          output "x" {
+            value = var.x
+          }
+          EOF
           verify_fixture "$root/hcl" hcl
 
           mkdir -p "$root/groovy/src" "$root/groovy/tests"
