@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""Auxiliary hardened workloads and redacted diagnostics for self-certification."""
+
+from __future__ import annotations
+
+import hashlib
+from pathlib import Path
+import random
+import shlex
+import shutil
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def positive_int(value: str, name: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise SystemExit(f"{name} must be > 0")
+    return parsed
+
+
+def sandbox(seed: str, iterations: int) -> int:
+    bwrap = shutil.which("bwrap")
+    sudo = shutil.which("sudo")
+    if not bwrap:
+        print("bubblewrap is required for the self-certification sandbox workload", file=sys.stderr)
+        return 2
+    if not sudo:
+        print("sudo is required to start bubblewrap on this hosted runner", file=sys.stderr)
+        return 2
+
+    # GitHub disables unprivileged user namespaces, so invoking bubblewrap as the
+    # runner user fails while establishing the implicit UID map. The hosted
+    # runner explicitly provides passwordless sudo. Starting bubblewrap as root
+    # avoids the prohibited user-namespace operation while still creating the
+    # mount namespace whose read-only bindings are the containment mechanism we
+    # are certifying. The sandboxed command receives no writable host mount
+    # except its private tmpfs at /tmp.
+    sudo_probe = subprocess.run(
+        [sudo, "-n", "true"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if sudo_probe.returncode != 0:
+        print("passwordless sudo is unavailable for sandbox setup", file=sys.stderr)
+        return 2
+
+    repo = str(ROOT)
+    repo_q = shlex.quote(repo)
+    marker = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
+    host_tmp_marker = Path("/tmp") / f"vf-host-visible-{marker}"
+    host_tmp_marker.write_text("host namespace marker", encoding="utf-8")
+
+    # These cases prove actual mount-level behavior. They intentionally avoid
+    # permission-bit predicates such as `test -w`, because the sandbox command
+    # runs as root and read-only mount enforcement is stronger than mode bits.
+    scripts = [
+        f"! touch /etc/vf-escape-{marker} 2>/dev/null && ! touch /usr/vf-escape-{marker} 2>/dev/null && touch /tmp/vf-sandbox-ok",
+        f"! touch {repo_q}/vf-sandbox-escape-{marker} 2>/dev/null",
+        f"test ! -e /tmp/{host_tmp_marker.name} && touch /tmp/{host_tmp_marker.name}",
+        f"ln -s /etc /tmp/vf-link-{marker} && ! touch /tmp/vf-link-{marker}/vf-escape 2>/dev/null",
+    ]
+
+    rng = random.Random(int(hashlib.sha256(seed.encode("utf-8")).hexdigest()[-16:], 16))
+    try:
+        for _ in range(iterations):
+            script = scripts[rng.randrange(len(scripts))]
+            command = [
+                sudo,
+                "-n",
+                bwrap,
+                "--die-with-parent",
+                "--ro-bind",
+                "/",
+                "/",
+                "--tmpfs",
+                "/tmp",
+                "--chdir",
+                repo,
+                "sh",
+                "-c",
+                script,
+            ]
+            completed = subprocess.run(
+                command,
+                cwd=ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+            if completed.returncode != 0:
+                print(f"sandbox case failed: {script}", file=sys.stderr)
+                if completed.stderr.strip():
+                    print(completed.stderr.strip()[:1000], file=sys.stderr)
+                print(f"VF_CERT_SANDBOX_CASES={iterations}")
+                print("VF_CERT_SANDBOX_ESCAPE=1")
+                return 1
+    finally:
+        host_tmp_marker.unlink(missing_ok=True)
+
+    print(f"VF_CERT_SANDBOX_CASES={iterations}")
+    print("VF_CERT_SANDBOX_ESCAPE=0")
+    return 0
+
+
+def reproducibility(seed: str, iterations: int) -> int:
+    listed = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if listed.returncode != 0:
+        sys.stderr.buffer.write(listed.stderr)
+        return listed.returncode
+
+    digest = hashlib.sha256()
+    digest.update(seed.encode("utf-8"))
+    digest.update(str(iterations).encode("ascii"))
+    for raw_name in sorted(filter(None, listed.stdout.split(b"\0"))):
+        relative = raw_name.decode("utf-8", errors="strict")
+        path = ROOT / relative
+        if not path.is_file():
+            continue
+        digest.update(len(raw_name).to_bytes(8, "little"))
+        digest.update(raw_name)
+        data = path.read_bytes()
+        digest.update(len(data).to_bytes(8, "little"))
+        digest.update(data)
+
+    print("VF_CERT_REPRODUCIBLE=1")
+    print(f"VF_CERT_REPRO_DIGEST={digest.hexdigest()}")
+    print(f"VF_CERT_REPRO_ITERATIONS={iterations}")
+    return 0
+
+
+def history_probe() -> int:
+    completed = subprocess.run(
+        ["git", "log", "--all", "--format=commit:%H", "-p", "--no-ext-diff", "--no-color", "--", "."],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        print("VF_HISTORY_PROBE_FAILED=git-log", file=sys.stderr)
+        return completed.returncode
+
+    markers = [
+        'password="',
+        'passwd="',
+        'api_key="',
+        'apikey="',
+        'access_token="',
+        'secret_key="',
+        'client_secret="',
+    ]
+    commit = "unknown"
+    path = "unknown"
+    hits = 0
+    for line in completed.stdout.splitlines():
+        if line.startswith("commit:"):
+            commit = line.removeprefix("commit:").strip()
+            continue
+        if line.startswith("+++ b/"):
+            path = line.removeprefix("+++ b/").strip()
+            continue
+        if not line.startswith("+") or line.startswith("+++"):
+            continue
+        normalized = "".join(ch for ch in line[1:] if not ch.isspace()).lower()
+        for marker in markers:
+            index = normalized.find(marker)
+            if index < 0:
+                continue
+            candidate = normalized[index + len(marker):].split('"', 1)[0]
+            if len(candidate) < 8:
+                continue
+            hits += 1
+            fingerprint = hashlib.sha256(candidate.encode("utf-8")).hexdigest()[:12]
+            print(
+                f"VF_HISTORY_PROBE_HIT commit={commit} path={path} marker={marker[:-2]} value_sha256={fingerprint}"
+            )
+    print(f"VF_HISTORY_PROBE_HITS={hits}")
+    return 0
+
+
+def main() -> int:
+    if len(sys.argv) < 2:
+        raise SystemExit("usage: vf_cert_aux.py <sandbox|reproducibility|history-probe> ...")
+    mode = sys.argv[1]
+    if mode == "history-probe":
+        return history_probe()
+    if len(sys.argv) != 4:
+        raise SystemExit(f"{mode} requires <seed> <iterations>")
+    seed = sys.argv[2]
+    iterations = positive_int(sys.argv[3], "iterations")
+    if mode == "sandbox":
+        return sandbox(seed, iterations)
+    if mode == "reproducibility":
+        return reproducibility(seed, iterations)
+    raise SystemExit(f"unknown mode: {mode}")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

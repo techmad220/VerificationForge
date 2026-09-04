@@ -1,0 +1,45 @@
+name: VerificationForge Self Certification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  self-certify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy, llvm-tools-preview
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install certification sandbox backend
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          bwrap --version
+      - name: Install pinned Rust coverage tool
+        run: cargo install cargo-llvm-cov --locked --version 0.9.0
+      - name: Preflight workspace
+        run: |
+          cargo fmt --all -- --check
+          cargo check --workspace --all-targets --locked
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace --all-targets --locked
+      - name: Build strict self-certification runner
+        run: cargo build -p verificationforge-cli --bin self_certify --locked
+      - name: Redacted history-security diagnostic
+        run: python3 tools/vf_cert_aux.py history-probe
+      - name: VerificationForge certifies VerificationForge
+        run: ./target/debug/self_certify .

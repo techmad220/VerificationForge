@@ -1,0 +1,6 @@
+python3
+tools/vf_self_cert.py
+commit-fuzz
+{seed}
+{iterations}
+{selections}

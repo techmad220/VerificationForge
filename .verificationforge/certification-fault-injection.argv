@@ -1,0 +1,5 @@
+python3
+tools/vf_self_cert.py
+fault-injection
+{seed}
+{iterations}
