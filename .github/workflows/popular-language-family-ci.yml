@@ -46,6 +46,16 @@ jobs:
             erlang-parsetools erlang-tools nim ldc gfortran gnucobol groovy clojure \
             fp-compiler octave tcl sqlite3 gnat
           python -m pip install --disable-pip-version-check 'sqlfluff==3.4.2'
+
+          # GitHub's hosted image is already space-constrained. The native matrix adds
+          # ~2 GiB of toolchains, so reclaim package/download caches before invoking
+          # compilers. This preserves every real toolchain and fixture check.
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+          python -m pip cache purge >/dev/null 2>&1 || true
+          rm -rf "$RUNNER_TEMP"/dartsdk-linux-x64-release.zip \
+                 "$RUNNER_TEMP"/zig-x86_64-linux-0.14.1.tar.xz 2>/dev/null || true
+          df -h /
       - name: Verify native toolchains
         shell: bash
         run: |
