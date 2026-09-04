@@ -248,14 +248,14 @@ jobs:
 
           mkdir -p "$root/cobol/src" "$root/cobol/tests"
           cat > "$root/cobol/src/add.cob" <<'EOF'
-          >>SOURCE FORMAT IS FREE
+                >>SOURCE FORMAT IS FREE
           IDENTIFICATION DIVISION.
           PROGRAM-ID. ADDDEMO.
           PROCEDURE DIVISION.
               STOP RUN.
           EOF
           cat > "$root/cobol/tests/add_test.cob" <<'EOF'
-          >>SOURCE FORMAT IS FREE
+                >>SOURCE FORMAT IS FREE
           IDENTIFICATION DIVISION.
           PROGRAM-ID. ADDTEST.
           PROCEDURE DIVISION.
