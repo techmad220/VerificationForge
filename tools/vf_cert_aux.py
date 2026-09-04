@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 import random
+import shlex
 import shutil
 import subprocess
 import sys
@@ -22,27 +23,45 @@ def positive_int(value: str, name: str) -> int:
 
 def sandbox(seed: str, iterations: int) -> int:
     bwrap = shutil.which("bwrap")
+    sudo = shutil.which("sudo")
     if not bwrap:
         print("bubblewrap is required for the self-certification sandbox workload", file=sys.stderr)
         return 2
+    if not sudo:
+        print("sudo is required to start bubblewrap on this hosted runner", file=sys.stderr)
+        return 2
+
+    # GitHub disables unprivileged user namespaces, so invoking bubblewrap as the
+    # runner user fails while establishing the implicit UID map. The hosted
+    # runner explicitly provides passwordless sudo. Starting bubblewrap as root
+    # avoids the prohibited user-namespace operation while still creating the
+    # mount namespace whose read-only bindings are the containment mechanism we
+    # are certifying. The sandboxed command receives no writable host mount
+    # except its private tmpfs at /tmp.
+    sudo_probe = subprocess.run(
+        [sudo, "-n", "true"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if sudo_probe.returncode != 0:
+        print("passwordless sudo is unavailable for sandbox setup", file=sys.stderr)
+        return 2
 
     repo = str(ROOT)
+    repo_q = shlex.quote(repo)
     marker = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
     host_tmp_marker = Path("/tmp") / f"vf-host-visible-{marker}"
     host_tmp_marker.write_text("host namespace marker", encoding="utf-8")
 
-    # GitHub-hosted runners block the additional user/network/PID namespace
-    # operations bubblewrap would normally use for a stronger sandbox. This
-    # workload therefore certifies only the containment properties the runner
-    # can enforce reliably: a separate mount namespace, read-only host and
-    # repository mounts, a private writable /tmp, and resistance to symlink
-    # escapes back into read-only host paths. It does not claim network or PID
-    # namespace isolation.
+    # These cases prove actual mount-level behavior. They intentionally avoid
+    # permission-bit predicates such as `test -w`, because the sandbox command
+    # runs as root and read-only mount enforcement is stronger than mode bits.
     scripts = [
-        "test ! -w /etc && test ! -w /usr && touch /tmp/vf-sandbox-ok",
-        f"! touch /etc/vf-escape-{marker} 2>/dev/null",
-        f"! touch {repo}/vf-sandbox-escape-{marker} 2>/dev/null",
-        f"test ! -e /tmp/{host_tmp_marker.name}",
+        f"! touch /etc/vf-escape-{marker} 2>/dev/null && ! touch /usr/vf-escape-{marker} 2>/dev/null && touch /tmp/vf-sandbox-ok",
+        f"! touch {repo_q}/vf-sandbox-escape-{marker} 2>/dev/null",
+        f"test ! -e /tmp/{host_tmp_marker.name} && touch /tmp/{host_tmp_marker.name}",
         f"ln -s /etc /tmp/vf-link-{marker} && ! touch /tmp/vf-link-{marker}/vf-escape 2>/dev/null",
     ]
 
@@ -51,15 +70,13 @@ def sandbox(seed: str, iterations: int) -> int:
         for _ in range(iterations):
             script = scripts[rng.randrange(len(scripts))]
             command = [
+                sudo,
+                "-n",
                 bwrap,
                 "--die-with-parent",
                 "--ro-bind",
                 "/",
                 "/",
-                "--dev",
-                "/dev",
-                "--proc",
-                "/proc",
                 "--tmpfs",
                 "/tmp",
                 "--chdir",
