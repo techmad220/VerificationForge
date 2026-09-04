@@ -288,7 +288,7 @@ jobs:
           target = "erlang"
           EOF
           printf 'pub fn add(a: Int, b: Int) -> Int { a + b }\n' > "$root/gleam/src/vf_fixture.gleam"
-          printf 'import vf_fixture\n\npub fn smoke_test() {\n  let assert 5 = vf_fixture.add(2, 3)\n}\n' > "$root/gleam/test/vf_fixture_test.gleam"
+          printf 'import vf_fixture\n\npub fn main() {\n  let assert 5 = vf_fixture.add(2, 3)\n}\n' > "$root/gleam/test/vf_fixture_test.gleam"
           verify_fixture "$root/gleam" gleam
 
           mkdir -p "$root/ada/src" "$root/ada/tests"
