@@ -349,14 +349,18 @@ jobs:
           mkdir -p "$root/ada/src" "$root/ada/tests"
           cat > "$root/ada/src/main.adb" <<'EOF'
           procedure Main is
+             Result : constant Integer := 2 + 3;
           begin
-             null;
+             if Result /= 5 then
+                raise Program_Error;
+             end if;
           end Main;
           EOF
           cat > "$root/ada/tests/add_test.adb" <<'EOF'
           procedure Add_Test is
+             Result : constant Integer := 2 + 3;
           begin
-             if 2 + 3 /= 5 then
+             if Result /= 5 then
                 raise Program_Error;
              end if;
           end Add_Test;
