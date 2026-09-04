@@ -205,21 +205,10 @@ jobs:
           verify_fixture "$root/fortran" fortran
 
           mkdir -p "$root/cobol/src" "$root/cobol/tests"
-          cat > "$root/cobol/src/add.cob" <<'EOF'
-          IDENTIFICATION DIVISION.
-          PROGRAM-ID. ADDDEMO.
-          PROCEDURE DIVISION.
-              STOP RUN.
-          EOF
-          cat > "$root/cobol/tests/add_test.cob" <<'EOF'
-          IDENTIFICATION DIVISION.
-          PROGRAM-ID. ADDTEST.
-          PROCEDURE DIVISION.
-              IF 2 + 3 NOT = 5
-                  MOVE 1 TO RETURN-CODE
-              END-IF
-              STOP RUN.
-          EOF
+          # GnuCOBOL defaults to fixed format. Put the source-format directive in
+          # column 8 so the default parser can switch these fixtures to free form.
+          printf '       >>SOURCE FORMAT IS FREE\nIDENTIFICATION DIVISION.\nPROGRAM-ID. ADDDEMO.\nPROCEDURE DIVISION.\n    STOP RUN.\n' > "$root/cobol/src/add.cob"
+          printf '       >>SOURCE FORMAT IS FREE\nIDENTIFICATION DIVISION.\nPROGRAM-ID. ADDTEST.\nPROCEDURE DIVISION.\n    IF 2 + 3 NOT = 5\n        MOVE 1 TO RETURN-CODE\n    END-IF\n    STOP RUN.\n' > "$root/cobol/tests/add_test.cob"
           verify_fixture "$root/cobol" cobol
 
           mkdir -p "$root/sql/src" "$root/sql/tests"
