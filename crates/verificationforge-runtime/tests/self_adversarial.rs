@@ -97,7 +97,7 @@ fn fuzz_cases(seed: u64, iterations: usize) {
 }
 
 fn concurrency_cases(seed: u64, iterations: usize) {
-    let workers = iterations.min(8).max(1);
+    let workers = iterations.clamp(1, 8);
     let completed = AtomicUsize::new(0);
     thread::scope(|scope| {
         for worker in 0..workers {
