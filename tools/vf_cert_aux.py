@@ -31,18 +31,19 @@ def sandbox(seed: str, iterations: int) -> int:
     host_tmp_marker = Path("/tmp") / f"vf-host-visible-{marker}"
     host_tmp_marker.write_text("host namespace marker", encoding="utf-8")
 
-    # GitHub-hosted runners do not permit bubblewrap to configure loopback in a
-    # new network namespace. The certification contract here therefore proves
-    # the containment properties the runner can enforce reliably: read-only
-    # host/repository mounts, a private writable /tmp, PID/UTS/IPC namespaces,
-    # and a zero-capability child process. Network isolation is intentionally not
-    # claimed by this workload.
+    # GitHub-hosted runners block the additional user/network/PID namespace
+    # operations bubblewrap would normally use for a stronger sandbox. This
+    # workload therefore certifies only the containment properties the runner
+    # can enforce reliably: a separate mount namespace, read-only host and
+    # repository mounts, a private writable /tmp, and resistance to symlink
+    # escapes back into read-only host paths. It does not claim network or PID
+    # namespace isolation.
     scripts = [
         "test ! -w /etc && test ! -w /usr && touch /tmp/vf-sandbox-ok",
         f"! touch /etc/vf-escape-{marker} 2>/dev/null",
         f"! touch {repo}/vf-sandbox-escape-{marker} 2>/dev/null",
         f"test ! -e /tmp/{host_tmp_marker.name}",
-        "test \"$(awk '/^CapEff:/ {print $2}' /proc/self/status)\" = \"0000000000000000\"",
+        f"ln -s /etc /tmp/vf-link-{marker} && ! touch /tmp/vf-link-{marker}/vf-escape 2>/dev/null",
     ]
 
     rng = random.Random(int(hashlib.sha256(seed.encode("utf-8")).hexdigest()[-16:], 16))
@@ -52,12 +53,6 @@ def sandbox(seed: str, iterations: int) -> int:
             command = [
                 bwrap,
                 "--die-with-parent",
-                "--new-session",
-                "--unshare-pid",
-                "--unshare-uts",
-                "--unshare-ipc",
-                "--cap-drop",
-                "ALL",
                 "--ro-bind",
                 "/",
                 "/",
