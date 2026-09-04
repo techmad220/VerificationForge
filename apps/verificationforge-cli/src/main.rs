@@ -9,6 +9,9 @@ use verificationforge_adapter_fallback::builtin_fallback_adapters;
 use verificationforge_adapter_go::GoAdapter;
 use verificationforge_adapter_js_family::{JavaScriptAdapter, TypeScriptAdapter};
 use verificationforge_adapter_jvm_family::{JavaAdapter, KotlinAdapter, ScalaAdapter};
+use verificationforge_adapter_popular_family::{
+    is_popular_native_language_id, popular_language_adapters,
+};
 use verificationforge_adapter_python::PythonAdapter;
 use verificationforge_adapter_rust::RustAdapter;
 use verificationforge_adapter_script_family::{BashAdapter, PhpAdapter, PowerShellAdapter};
@@ -75,10 +78,14 @@ fn run() -> Result<bool, String> {
     registry.register(Arc::new(CssAdapter));
     registry.register(Arc::new(MarkdownAdapter));
     registry.register(Arc::new(WebTemplateAdapter));
+    for adapter in popular_language_adapters() {
+        registry.register(adapter);
+    }
     registry.register_specialist(Arc::new(WebEcosystemSpecialist));
     for adapter in builtin_fallback_adapters()
         .into_iter()
         .filter(|adapter| adapter.id() != "html-css")
+        .filter(|adapter| !is_popular_native_language_id(adapter.id()))
     {
         registry.register(adapter);
     }

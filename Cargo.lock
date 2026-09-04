@@ -45,6 +45,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "verificationforge-adapter-popular-family"
+version = "0.1.0"
+dependencies = [
+ "verificationforge-core",
+]
+
+[[package]]
 name = "verificationforge-adapter-python"
 version = "0.1.0"
 dependencies = [
@@ -82,6 +89,7 @@ dependencies = [
  "verificationforge-adapter-go",
  "verificationforge-adapter-js-family",
  "verificationforge-adapter-jvm-family",
+ "verificationforge-adapter-popular-family",
  "verificationforge-adapter-python",
  "verificationforge-adapter-rust",
  "verificationforge-adapter-script-family",
