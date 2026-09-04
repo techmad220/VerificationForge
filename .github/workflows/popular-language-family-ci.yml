@@ -91,6 +91,7 @@ jobs:
           cargo clippy --workspace --all-targets -- -D warnings
           cargo test --workspace --all-targets --locked
       - name: Verify native language fixtures
+        id: native-fixtures
         shell: bash
         run: |
           set -euo pipefail
@@ -109,6 +110,7 @@ jobs:
             set -e
             printf '%s\n' "$out"
             if [ "$status" -ne 0 ]; then
+              echo "failed_adapter=$adapter" >> "$GITHUB_OUTPUT"
               echo "::error title=Popular fixture failed::$adapter exited with status $status"
               echo "FIXTURE_FAILED adapter=$adapter exit=$status" >&2
               return "$status"
@@ -321,3 +323,8 @@ jobs:
           end Add_Test;
           EOF
           verify_fixture "$root/ada" ada
+      - name: "Failed native fixture: ${{ steps.native-fixtures.outputs.failed_adapter }}"
+        if: failure() && steps.native-fixtures.outputs.failed_adapter != ''
+        shell: bash
+        run: |
+          echo "Native fixture failed: ${{ steps.native-fixtures.outputs.failed_adapter }}" >&2
