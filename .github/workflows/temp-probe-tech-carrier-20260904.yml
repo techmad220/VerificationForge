@@ -1,0 +1,43 @@
+name: TEMP Probe TECH Carrier 20260904
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temp-probe-tech-carrier-20260904
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: github.event.issue.title == 'run:probe-tech-carrier-20260904'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Read-only carrier identity probe
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          Write-Host "COMPUTERNAME=$env:COMPUTERNAME"
+          Write-Host "RUNNER_NAME=$env:RUNNER_NAME"
+          Write-Host "RUNNER_OS=$env:RUNNER_OS"
+          Write-Host "RUNNER_ARCH=$env:RUNNER_ARCH"
+          Write-Host "GITHUB_WORKSPACE=$env:GITHUB_WORKSPACE"
+          if (-not [string]::Equals($env:COMPUTERNAME, 'TECH', [StringComparison]::OrdinalIgnoreCase)) {
+            throw "TECH_CARRIER_REQUIRED actual=$env:COMPUTERNAME"
+          }
+          if ([string]$env:RUNNER_NAME -match '(?i)gtaops|legacy|render') {
+            throw "PROTECTED_CARRIER_FORBIDDEN actual=$env:RUNNER_NAME"
+          }
+          $target = 'D:\RunnerFabric\github-runners\runnerfabric-self\run.cmd'
+          Write-Host "HACKEREXPERIENCE_RUN_CMD_EXISTS=$([bool](Test-Path -LiteralPath $target -PathType Leaf))"
+          if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
+            throw "HACKEREXPERIENCE_RUN_CMD_MISSING path=$target"
+          }
+          Write-Host 'TECH_CARRIER_PROBE=PASS'
