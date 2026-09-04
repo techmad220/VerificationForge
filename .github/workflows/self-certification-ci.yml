@@ -39,5 +39,7 @@ jobs:
           cargo test --workspace --all-targets --locked
       - name: Build strict self-certification runner
         run: cargo build -p verificationforge-cli --bin self_certify --locked
+      - name: Redacted history-security diagnostic
+        run: python3 tools/vf_cert_aux.py history-probe
       - name: VerificationForge certifies VerificationForge
         run: ./target/debug/self_certify .
