@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   verify-popular-language-family:
-    runs-on: [self-hosted, linux, x64, techmados-ci]
+    runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
