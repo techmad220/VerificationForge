@@ -442,7 +442,8 @@ fn validation_command(
             vec![
                 "-q".into(),
                 "-gnatc".into(),
-                format!("-D{}", temp.display()),
+                "-D".into(),
+                temp.display().to_string(),
                 relative.into(),
             ],
         ),
@@ -721,8 +722,10 @@ fn run_test_file(
             "gnatmake",
             &[
                 "-q".into(),
-                format!("-D{}", temp.display()),
-                format!("-o{}", output.display()),
+                "-D".into(),
+                temp.display().to_string(),
+                "-o".into(),
+                output.display().to_string(),
                 relative.into(),
             ],
             &output,
