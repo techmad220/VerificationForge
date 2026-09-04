@@ -12,6 +12,8 @@ jobs:
   verify-popular-language-family:
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Linux, X64, rf-verificationforge-ephemeral]
+    env:
+      DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
