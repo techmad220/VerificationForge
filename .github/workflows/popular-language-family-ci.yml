@@ -57,38 +57,55 @@ jobs:
                  "$RUNNER_TEMP"/zig-x86_64-linux-0.14.1.tar.xz 2>/dev/null || true
           df -h /
       - name: Verify native toolchains
+        id: native-toolchains
         shell: bash
         run: |
           set -euo pipefail
-          swiftc --version
-          clang --version
-          dart --version
-          ruby --version
-          lua -v
-          luac -v
-          perl -v >/dev/null
-          Rscript --version
-          julia --version
-          ghc --version
-          ocamlc -version
-          dotnet --version
-          elixir --version
-          erl -version
-          zig version
-          nim --version
-          ldc2 --version
-          gfortran --version | head -1
-          cobc --version | head -1
-          sqlfluff --version
-          terraform version
-          groovy --version
-          clojure -e '(println "clojure-ok")'
-          fpc -iV
-          octave --version | head -1
+          verify_toolchain() {
+            local name="$1"
+            shift
+            echo "=== VERIFY_TOOLCHAIN name=$name ==="
+            if ! "$@"; then
+              echo "failed_toolchain=$name" >> "$GITHUB_OUTPUT"
+              echo "::error title=Popular toolchain failed::$name"
+              return 1
+            fi
+          }
+
+          verify_toolchain swift swiftc --version
+          verify_toolchain clang clang --version
+          verify_toolchain dart dart --version
+          verify_toolchain ruby ruby --version
+          verify_toolchain lua lua -v
+          verify_toolchain luac luac -v
+          verify_toolchain perl perl -v >/dev/null
+          verify_toolchain r Rscript --version
+          verify_toolchain julia julia --version
+          verify_toolchain ghc ghc --version
+          verify_toolchain ocaml ocamlc -version
+          verify_toolchain dotnet dotnet --version
+          verify_toolchain elixir elixir --version
+          verify_toolchain erlang erl -version
+          verify_toolchain zig zig version
+          verify_toolchain nim nim --version
+          verify_toolchain d ldc2 --version
+          verify_toolchain fortran gfortran --version
+          verify_toolchain cobol cobc --version
+          verify_toolchain sql sqlfluff --version
+          verify_toolchain hcl terraform version
+          verify_toolchain groovy groovy --version
+          verify_toolchain clojure clojure -e '(println "clojure-ok")'
+          verify_toolchain object-pascal fpc -iV
+          verify_toolchain matlab octave --version
           tclsh <<< 'puts [info patchlevel]'
-          nix --version
-          gleam --version
-          gnatmake --version | head -1
+          verify_toolchain nix nix --version
+          verify_toolchain gleam gleam --version
+          verify_toolchain ada gnatmake --version
+      - name: "Failed native toolchain: ${{ steps.native-toolchains.outputs.failed_toolchain }}"
+        if: failure() && steps.native-toolchains.outputs.failed_toolchain != ''
+        shell: bash
+        run: |
+          echo "Native toolchain failed: ${{ steps.native-toolchains.outputs.failed_toolchain }}" >&2
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -125,9 +142,21 @@ jobs:
               echo "FIXTURE_FAILED adapter=$adapter exit=$status" >&2
               return "$status"
             fi
-            test "$(grep -c "adapter=$adapter " <<<"$out")" -eq 1
-            grep -F 'VERIFICATIONFORGE_BARE_PASSES=0' <<<"$out"
-            grep -F 'VERIFICATIONFORGE_ACCEPTED=true' <<<"$out"
+            if [ "$(grep -c "adapter=$adapter " <<<"$out")" -ne 1 ]; then
+              echo "failed_adapter=$adapter" >> "$GITHUB_OUTPUT"
+              echo "::error title=Popular fixture failed::$adapter adapter-count mismatch"
+              return 1
+            fi
+            if ! grep -F 'VERIFICATIONFORGE_BARE_PASSES=0' <<<"$out"; then
+              echo "failed_adapter=$adapter" >> "$GITHUB_OUTPUT"
+              echo "::error title=Popular fixture failed::$adapter reported bare passes"
+              return 1
+            fi
+            if ! grep -F 'VERIFICATIONFORGE_ACCEPTED=true' <<<"$out"; then
+              echo "failed_adapter=$adapter" >> "$GITHUB_OUTPUT"
+              echo "::error title=Popular fixture failed::$adapter was not accepted"
+              return 1
+            fi
             echo "FIXTURE_PASSED adapter=$adapter"
           }
 
@@ -314,7 +343,7 @@ jobs:
           target = "erlang"
           EOF
           printf 'pub fn add(a: Int, b: Int) -> Int { a + b }\n' > "$root/gleam/src/vf_fixture.gleam"
-          printf 'import vf_fixture\n\npub fn smoke_test() {\n  let assert 5 = vf_fixture.add(2, 3)\n}\n' > "$root/gleam/test/vf_fixture_test.gleam"
+          printf 'import vf_fixture\n\npub fn main() {\n  let assert 5 = vf_fixture.add(2, 3)\n}\n' > "$root/gleam/test/vf_fixture_test.gleam"
           verify_fixture "$root/gleam" gleam
 
           mkdir -p "$root/ada/src" "$root/ada/tests"
