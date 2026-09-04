@@ -1,5 +1,5 @@
 python3
-tools/vf_self_cert.py
+tools/vf_cert_aux.py
 sandbox
 {seed}
 {iterations}
