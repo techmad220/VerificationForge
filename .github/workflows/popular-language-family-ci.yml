@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   verify-popular-language-family:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, techmados-ci]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -47,9 +47,8 @@ jobs:
             fp-compiler octave tcl sqlite3 gnat
           python -m pip install --disable-pip-version-check 'sqlfluff==3.4.2'
 
-          # GitHub's hosted image is already space-constrained. The native matrix adds
-          # ~2 GiB of toolchains, so reclaim package/download caches before invoking
-          # compilers. This preserves every real toolchain and fixture check.
+          # Keep package/download debris bounded on the persistent self-hosted runner.
+          # Installed toolchains remain available through the host package/tool caches.
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
           python -m pip cache purge >/dev/null 2>&1 || true
