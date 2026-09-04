@@ -114,7 +114,10 @@ fn concurrency_cases(seed: u64, iterations: usize) {
                     };
                     let first = schedule_tasks(tasks.clone(), budget).expect("schedule first pass");
                     let second = schedule_tasks(tasks, budget).expect("schedule second pass");
-                    assert_eq!(first, second, "scheduler must remain deterministic under load");
+                    assert_eq!(
+                        first, second,
+                        "scheduler must remain deterministic under load"
+                    );
                     completed.fetch_add(1, Ordering::SeqCst);
                     index += workers;
                 }
@@ -149,9 +152,7 @@ fn fault_cases(seed: u64, iterations: usize) {
     let execution = ProcessExecutionAdapter;
 
     for index in 0..iterations {
-        let snapshot = ContentAddress::from_bytes(
-            format!("{seed}:{index}").as_bytes(),
-        );
+        let snapshot = ContentAddress::from_bytes(format!("{seed}:{index}").as_bytes());
         let key = CacheKey::new(
             &snapshot,
             "self-fault",
@@ -209,10 +210,8 @@ fn resource_cases(seed: u64, iterations: usize) {
             VerificationLevel::Commit,
             1,
         );
-        let result = CheckResult::pass_with_evidence(
-            "self:resource",
-            format!("case={index} seed={seed:x}"),
-        );
+        let result =
+            CheckResult::pass_with_evidence("self:resource", format!("case={index} seed={seed:x}"));
         cache.put(&key, &result).expect("cache put");
         let restored = cache.get(&key).expect("cache get").expect("cache hit");
         assert_eq!(restored.status, result.status);
@@ -253,7 +252,9 @@ fn scheduling_tasks(seed: u64, count: usize) -> Vec<VerificationTask> {
 fn fd_count() -> Option<usize> {
     #[cfg(target_os = "linux")]
     {
-        fs::read_dir("/proc/self/fd").ok().map(|entries| entries.count())
+        fs::read_dir("/proc/self/fd")
+            .ok()
+            .map(|entries| entries.count())
     }
     #[cfg(not(target_os = "linux"))]
     {
