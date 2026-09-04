@@ -34,9 +34,7 @@ impl ExecutionAdapter for SelfCertificationExecutionAdapter {
         if output.success() && is_history_log_command(program, args) {
             let (filtered, exclusions) = filter_known_synthetic_history(&output.stdout);
             if exclusions != 0 {
-                eprintln!(
-                    "VERIFICATIONFORGE_SELF_CERT_SYNTHETIC_HISTORY_EXCLUSIONS={exclusions}"
-                );
+                eprintln!("VERIFICATIONFORGE_SELF_CERT_SYNTHETIC_HISTORY_EXCLUSIONS={exclusions}");
             }
             output.stdout = filtered;
         }
